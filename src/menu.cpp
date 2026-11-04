@@ -456,12 +456,29 @@ void TabCombat(const feat::Snapshot& s)
                                            : "Gives the power now, even before the story does. Save first: it can skip its tutorial.");
         ImGui::PopID();
     }
+    { // the game's own mode, shown as it is: a scripted part whose end was skipped can leave it on
+        ImVec2 rowMin = ImGui::GetCursorScreenPos();
+        float avail = ImGui::GetContentRegionAvail().x, x0 = ImGui::GetCursorPosX();
+        RowHover(rowMin, avail);
+        bool on = s.genesisOnly == 1, locked = s.genesisOnly < 0 || (!on && !s.powersWhy.empty());
+        ImGui::BeginDisabled(locked);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(T("Genesis Configuration only"));
+        ImGui::SameLine(x0 + avail - ImGui::GetFrameHeight() * 0.70f * 1.85f);
+        if (Switch("##genesisOnly", &on)) feat::SetGenesisOnly(on);
+        ImGui::EndDisabled();
+        Tooltip(rowMin, {rowMin.x + avail, rowMin.y + ImGui::GetFrameHeight()},
+                s.genesisOnly < 0 ? "Not found in this version of the game."
+                : locked          ? s.powersWhy
+                                  : "Some scripted parts leave you only the Genesis Configuration. Turn this off if it "
+                                    "stayed in your hand for good.");
+    }
 }
 
 void TabMovement(const feat::Snapshot& s)
 {
     Section("MOVEMENT");
-    for (Toggle t : {feat::Fly, feat::Noclip, feat::FreeCam}) ToggleRow(t, s);
+    for (Toggle t : {feat::Fly, feat::Noclip, feat::FreeCam, feat::PauseTime}) ToggleRow(t, s);
     SliderRow(feat::SpeedMult, "Speed", "x%.2f", s, "Movement speed multiplier (also flying and free camera speed).");
     SliderRow(feat::JumpMult, "Jump height", "x%.1f", s, "Jump velocity multiplier.");
 

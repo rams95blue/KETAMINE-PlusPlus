@@ -97,11 +97,12 @@ Cada opción busca los datos del juego **por su nombre mientras se ejecuta**. Si
 - Poderes de la Configuración Génesis sin coste de Sufrimiento
 - Poderes sin enfriamiento, llenar Sufrimiento
 - Desbloquear Telequinesis, Piroquinesis y Cadenas infernales antes que la historia
+- Recuperar tus armas si una parte guionizada te deja atascado solo con la Configuración Génesis
 - Aim silencioso: tus disparos dan en la cabeza del enemigo más cercano a la mira, dentro de un círculo ajustable
 
 **Movimiento**
 - Volar y noclip hacia donde miras, con tus teclas de movimiento habituales o el mando
-- Cámara libre (tu personaje se queda en su sitio)
+- Cámara libre (tu personaje se queda en su sitio), con opción de pausar el tiempo
 - Multiplicadores de velocidad y altura de salto
 - 3 posiciones guardadas + teletransporte a cualquier punto de control del nivel
 

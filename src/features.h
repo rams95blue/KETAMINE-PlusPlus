@@ -13,7 +13,7 @@ enum Toggle {
     GodMode, InfiniteHealth, NoSprintCooldown, OneHitKill, Invisible,
     InfiniteAmmo, NoSufferingCost, NoPowerCooldown, Unbreakable, SilentAim,
     Fly, Noclip,
-    FreezeAI, HideHUD, FreeCam, AutoLockpick, SkipIntros,
+    FreezeAI, HideHUD, FreeCam, PauseTime, AutoLockpick, SkipIntros,
     Esp, EspBox, EspHealth, EspName, EspDistance, EspSkeleton, EspHead, EspChams, EspSnaplines, EspOffscreen,
     EspItems, EspContainers, EspSavePoints, EspAimFov,
     ToggleCount
@@ -56,6 +56,7 @@ struct Snapshot {
     std::array<std::string, ValueCount> valueWhy;
     std::array<bool, PowerCount> powers{}; // unlocked
     std::string powersWhy;                 // non-empty = can't unlock now
+    int genesisOnly = -1;                  // the game's "Genesis Configuration only" mode: 1 on, 0 off, -1 not found
     std::vector<std::pair<std::string, std::vector<Named>>> items; // by category
     std::vector<Named> objectivesActive, objectivesDone, checkpoints;
     std::string tracked;
@@ -110,5 +111,6 @@ void LoadSlot(int slot);
 void TeleportCheckpoint(uint64_t index);
 void CompleteObjective(uint64_t fname);
 void UnlockPower(Power power);
+void SetGenesisOnly(bool on);
 
 } // namespace feat

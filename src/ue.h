@@ -117,6 +117,7 @@ struct FString { // TArray<wchar_t>
 void RunOnGameThread(std::function<void()> fn);
 void SetTick(std::function<void()> fn);
 void SetFrameTick(std::function<void()> fn);
+double PreciseSeconds(); // QueryPerformanceCounter clock (GetTickCount64 moves in 15.6 ms steps)
 
 // Swaps the code a native UFunction runs (what both Blueprint and ProcessEvent call) for `detour`, which must call
 // `*original`. The parameters are already consumed when the original returns; `result` points at the return value.

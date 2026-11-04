@@ -97,11 +97,12 @@ der Grund steht im Tooltip, statt dass das Spiel abstürzt.
 - Kräfte der Genesis-Konfiguration ohne Leid-Kosten
 - Keine Abklingzeit für Kräfte, Leid auffüllen
 - Telekinese, Pyrokinese und Höllenketten vor der Story freischalten
+- Deine Waffen zurückholen, wenn dich eine Skriptsequenz nur mit der Genesis-Konfiguration zurücklässt
 - Silent Aim: deine Schüsse treffen den Kopf des Gegners, der dem Fadenkreuz am nächsten ist, in einem einstellbaren Kreis
 
 **Bewegung**
 - Fliegen und Noclip in Blickrichtung, mit deinen üblichen Bewegungstasten oder dem Gamepad
-- Freie Kamera (deine Figur bleibt stehen)
+- Freie Kamera (deine Figur bleibt stehen), auf Wunsch mit angehaltener Zeit
 - Multiplikatoren für Tempo und Sprunghöhe
 - 3 gespeicherte Positionen + Teleport zu jedem Checkpoint des Levels
 

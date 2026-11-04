@@ -65,14 +65,7 @@ std::function<void()> g_tick, g_frameTick;
 // GetTickCount64 moves in 15.6 ms steps: a ">= 16 ms" check on it really meant 32 Hz.
 uint64_t PreciseMs()
 {
-    static const double toMs = [] {
-        LARGE_INTEGER f;
-        QueryPerformanceFrequency(&f);
-        return 1000.0 / double(f.QuadPart);
-    }();
-    LARGE_INTEGER c;
-    QueryPerformanceCounter(&c);
-    return uint64_t(double(c.QuadPart) * toMs);
+    return uint64_t(PreciseSeconds() * 1000);
 }
 
 template <class T> T Read(const void* p, int offset) { return *reinterpret_cast<const T*>(static_cast<const uint8_t*>(p) + offset); }
@@ -571,6 +564,18 @@ void RunOnGameThread(std::function<void()> fn)
 
 void SetTick(std::function<void()> fn) { g_tick = std::move(fn); }
 void SetFrameTick(std::function<void()> fn) { g_frameTick = std::move(fn); }
+
+double PreciseSeconds()
+{
+    static const double freq = [] {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        return double(f.QuadPart);
+    }();
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    return double(c.QuadPart) / freq;
+}
 
 bool Guard(std::function<void()>& fn) { return Guarded(fn); }
 

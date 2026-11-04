@@ -97,11 +97,12 @@ out with the reason in a tooltip instead of crashing.
 - Genesis Configuration powers with no Suffering cost
 - No power cooldown, refill Suffering
 - Unlock Telekinesis, Pyrokinesis and Hellchains before the story does
+- Get your weapons back if a scripted part leaves you stuck with only the Genesis Configuration
 - Silent aim: your shots hit the head of the enemy nearest the crosshair, inside an adjustable circle
 
 **Movement**
 - Fly and noclip, towards where you look, with your usual movement keys or gamepad
-- Free camera (your character stays in place)
+- Free camera (your character stays in place), with an option to pause time
 - Speed and jump height multipliers
 - 3 saved positions + teleport to any level checkpoint
 

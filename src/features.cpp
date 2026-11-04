@@ -35,6 +35,8 @@ const ToggleInfo kToggles[ToggleCount] = {
     {"FreezeAI", "Freeze enemies", "Enemies stop moving and attacking."},
     {"HideHUD", "Hide HUD", "Hides the game interface (menus you open later stay visible)."},
     {"FreeCam", "Free camera", "Detached camera: movement keys to move, mouse to look. Your character stays in place."},
+    {"FreeCamPauseTime", "Pause time in free camera",
+     "The world stops while the free camera is on: enemies, effects, physics. You still move and look around."},
     {"AutoLockpick", "Auto lockpick", "Locks open by themselves a moment after you start picking them."},
     {"SkipIntros", "Skip intros",
      "Skips the logos and notices when the game starts. The EULA and brightness screens still show the first time."},
@@ -111,7 +113,8 @@ struct State {
     Weak camera;                            // free camera actor
     Weak camBack;                           // what the view was on before it (the game's own camera actor)
     Vec camPos{};
-    uint64_t camAt = 0;
+    double camAt = 0, camSince = 0; // last move / start, in PreciseSeconds
+    int camMoves = 0;
     float jumpZ = 0;
     float speedBase = -1;
     std::array<Vec, 3> slotPos{};
@@ -472,7 +475,7 @@ UObject* ViewTarget(UObject* pc)
 // Free camera: a camera actor we move ourselves while the player stays frozen in place.
 // The game doesn't look through the pawn but through its own camera actor (the pawn's FPCameraActor child): giving the
 // view to the pawn picked its cinematic camera instead (depth of field blur, no first-person body).
-void StartFreeCam(UObject* pc, UObject* player, uint64_t now)
+void StartFreeCam(UObject* pc, UObject* player)
 {
     s.camBack = Weak(ViewTarget(pc));
     Transform t;
@@ -490,7 +493,8 @@ void StartFreeCam(UObject* pc, UObject* player, uint64_t now)
             s.camBack.Get() ? Name(s.camBack.Get()).c_str() : "nothing");
     s.camera = Weak(cam);
     s.camPos = t.pos;
-    s.camAt = now;
+    s.camAt = s.camSince = PreciseSeconds();
+    s.camMoves = 0;
 }
 
 void StopFreeCam(UObject* pc, UObject* player)
@@ -500,18 +504,21 @@ void StopFreeCam(UObject* pc, UObject* player)
         if (ViewTarget(pc) == cam) // else the game moved the view itself meanwhile (a cutscene): leave it there
             Call(pc, "SetViewTargetWithBlend").Arg(0, back).Arg(1, 0.f).Arg(2, uint8_t(0)).Arg(3, 0.f).Arg(4, false).Run();
         Call(cam, "K2_DestroyActor").Run();
-        km::Log("Free camera: off, view back on %s", Name(ViewTarget(pc)).c_str());
+        km::Log("Free camera: off, view back on %s (moved %.0f times a second)", Name(ViewTarget(pc)).c_str(),
+                s.camMoves / std::max(PreciseSeconds() - s.camSince, 0.001));
     }
     Call(s.cmc.Get(), "SetMovementMode").Arg(0, MOVE_Walking).Arg(1, uint8_t(0)).Run();
     s.camera = {};
 }
 
-void MoveFreeCam(UObject* pc, UObject* player, uint64_t now)
+// Every engine frame (TickFrame): moved less often than the picture is drawn, the camera judders.
+void MoveFreeCam(UObject* pc, UObject* player)
 {
     UObject* cam = s.camera.Get();
     if (!cam) return;
-    double dt = std::min((now - s.camAt) / 1000.0, 0.1);
+    double now = PreciseSeconds(), dt = std::min(now - s.camAt, 0.1);
     s.camAt = now;
+    s.camMoves++;
     Vec v = FlyVelocity(pc, player, 1000.f * g_value[SpeedMult], true);
     s.camPos = {s.camPos.x + v.x * dt, s.camPos.y + v.y * dt, s.camPos.z + v.z * dt};
     Vec fwd, right;
@@ -849,10 +856,11 @@ void TickEsp(UObject* pc, UObject* player, uint64_t now)
     g_esp = std::move(f);
 }
 
-// Once per engine frame: the ESP and the aim circle follow the picture.
+// Once per engine frame: the free camera, the ESP and the aim circle follow the picture.
 void TickFrame()
 {
     UObject* player = s.player.Get();
+    if (UObject* pc = s.pc.Get(); pc && player) MoveFreeCam(pc, player);
     if (player && (g_on[Esp] || (g_on[SilentAim] && g_on[EspAimFov]))) return TickEsp(s.pc.Get(), player, GetTickCount64());
     std::lock_guard lock(g_espMutex);
     g_esp = {};
@@ -956,6 +964,10 @@ void TickPlayer(UObject* player, uint64_t now, Snapshot& snap)
         for (int i = 0; given && i < given->num && i < 32; i++)
             snap.powers[p] = snap.powers[p] || _stricmp(NameToString(&given->data[i]).c_str(), kPowerTags[p]) == 0;
     }
+    // The mode some scripted parts put you in: only the Genesis Configuration in hand, no switching to your weapons.
+    bool forced = false, blocked = false;
+    GetBool(player, "bBlockWeaponSwitchingFromSlots", &blocked);
+    snap.genesisOnly = GetBool(player, "bIsForcedGenesisConfiguration", &forced) ? forced || blocked : -1;
 
     // Player
     if (!health || !maxHealth) why[GodMode] = why[InfiniteHealth] = "Health attribute not found.";
@@ -1050,11 +1062,9 @@ void TickPlayer(UObject* player, uint64_t now, Snapshot& snap)
     // Movement
     if (!cmc) why[Fly] = why[Noclip] = why[FreeCam] = "Movement component not found.";
     if (!FindClass("CameraActor")) why[FreeCam] = "Camera class not found.";
+    why[PauseTime] = why[FreeCam];
     bool camWasOn = s.applied[FreeCam];
-    if (Track(FreeCam, [&] { StopFreeCam(pc, player); })) {
-        if (!camWasOn) StartFreeCam(pc, player, now);
-        MoveFreeCam(pc, player, now);
-    }
+    if (Track(FreeCam, [&] { StopFreeCam(pc, player); }) && !camWasOn) StartFreeCam(pc, player); // moved in TickFrame
     bool fly = (g_on[Fly] || g_on[Noclip]) && !g_on[FreeCam]; // the free camera freezes the player
     static bool flying;
     if (cmc && fly) {
@@ -1096,11 +1106,19 @@ void TickPlayer(UObject* player, uint64_t now, Snapshot& snap)
     };
     if (Track(FreezeAI, [&] { dilate(1); })) dilate(0);
 
-    float time = g_value[TimeScale];
+    // Time scale, or stopped while the free camera runs with "Pause time" on (the engine keeps 1/10000 of it). Your
+    // controller then runs that much faster, so looking around keeps its usual speed.
+    bool paused = g_on[PauseTime] && s.camera.Get();
+    float time = paused ? 0.f : g_value[TimeScale].load();
+    static float timeSet = 1;
     static uint64_t timeAt; // a level load resets time dilation: re-apply now and then
-    if (time != s.lastValue[TimeScale] || (time != 1 && now - timeAt > 2000)) {
+    if (time != timeSet || (time != 1 && now - timeAt > 2000)) {
         timeAt = now;
+        timeSet = time;
         Call(Cdo("GameplayStatics"), "SetGlobalTimeDilation").Arg(0, pc).Arg(1, time).Run();
+        Call get(Cdo("GameplayStatics"), "GetGlobalTimeDilation");
+        float dilation = get.Arg(0, pc).Run() ? get.Out<float>("ReturnValue") : 1;
+        if (float* d = Member<float>(pc, "CustomTimeDilation")) *d = paused && dilation > 0 ? 1 / dilation : 1;
     }
     float fov = g_value[Fov];
     if (fov != s.lastValue[Fov]) Call(pc, "FOV").Arg(0, fov).Run();
@@ -1542,6 +1560,19 @@ void UnlockPower(Power power)
         uint64_t tag = MakeName(kPowerTags[power]); // a gameplay tag is just its FName
         bool ok = tag && Call(player, "AddGenesisConfigurationAbility").Arg(0, tag).Run();
         km::Log("Unlock %s (%s): %s", kPowerNames[power], tag ? NameToString(&tag).c_str() : "no tag", ok ? "called" : "failed");
+    });
+}
+
+// Through the game's own switch. Off also lifts the weapon-switching block: a scripted part whose end was skipped
+// (teleport, completed objective, a power given early) never turns them back.
+void SetGenesisOnly(bool on)
+{
+    OnGame([on](UObject* player) {
+        bool ok = Call(player, "ForceOnlyGenesisConfiguration").Arg(0, on).Arg(1, false).Arg(2, false).Run();
+        if (!on) SetBool(player, "bBlockWeaponSwitchingFromSlots", false);
+        bool forced = on;
+        GetBool(player, "bIsForcedGenesisConfiguration", &forced);
+        km::Log("Genesis Configuration only: %s %s, now %s", on ? "on" : "off", ok ? "called" : "failed", forced ? "on" : "off");
     });
 }
 

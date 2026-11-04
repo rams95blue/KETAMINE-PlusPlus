@@ -97,11 +97,12 @@ na dica, em vez de fechar o jogo.
 - Poderes da Configuração Gênesis sem custo de Sofrimento
 - Poderes sem recarga, encher o Sofrimento
 - Desbloquear Telecinese, Pirocinese e Correntes infernais antes da história
+- Recuperar suas armas se uma parte roteirizada deixar você preso só com a Configuração Gênesis
 - Mira silenciosa: seus tiros acertam a cabeça do inimigo mais perto da mira, dentro de um círculo ajustável
 
 **Movimento**
 - Voar e noclip para onde você olha, com as teclas de movimento de sempre ou o controle
-- Câmera livre (seu personagem fica parado)
+- Câmera livre (seu personagem fica parado), com opção de pausar o tempo
 - Multiplicadores de velocidade e altura do pulo
 - 3 posições salvas + teletransporte para qualquer checkpoint do nível
 

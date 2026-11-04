@@ -97,11 +97,12 @@ avec la raison dans une infobulle, au lieu de faire planter le jeu.
 - Pouvoirs de la Configuration Genesis sans coût en Souffrance
 - Pouvoirs sans recharge, remplir la Souffrance
 - Débloquer Télékinésie, Pyrokinésie et Chaînes infernales avant l'histoire
+- Récupérer vos armes si un passage scripté vous laisse bloqué avec la seule Configuration Genesis
 - Visée silencieuse : vos tirs touchent la tête de l'ennemi le plus proche du viseur, dans un cercle réglable
 
 **Déplacement**
 - Vol et noclip vers là où vous regardez, avec vos touches de déplacement habituelles ou la manette
-- Caméra libre (votre personnage reste sur place)
+- Caméra libre (votre personnage reste sur place), avec option pour figer le temps
 - Multiplicateurs de vitesse et de hauteur de saut
 - 3 positions enregistrées + téléportation vers n'importe quel point de contrôle du niveau
 
