@@ -90,7 +90,6 @@ The Nexus page images are rendered from `docs/nexus/src` (HTML + Playwright) and
 
 ## Credits
 
-- **rams95** ([github.com/rams95blue](https://github.com/rams95blue)): KETAMINE++, bundling it all together with the added features
 - **omxga** (literalynn): Hellraiser Revival's Ketamine Menu (MIT); its README is in [docs/README-KetamineMenu.md](docs/README-KetamineMenu.md)
 - **Reynbow**: TrueFOV · **uwumatic101**: the five fixes · **Thidrec**: True Minimap
 - [Dear ImGui](https://github.com/ocornut/imgui) (MIT), [MinHook](https://github.com/TsudaKageyu/minhook) (BSD-2-Clause),
