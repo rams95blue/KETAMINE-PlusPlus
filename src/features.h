@@ -15,7 +15,7 @@ enum Toggle {
     Fly, Noclip, UnlockPitch, Jump, Bhop, BhopAuto, BhopHud, Speedometer,
     FreezeAI, HideHUD, FreeCam, PauseTime, AutoLockpick, SkipIntros,
     CustomFov, FovKeepEffects, // FOV editor (fov.cpp)
-    FixToolInput, KeypadFix, SpeedUp, QuickInteract, HudAutoHide, CutsceneSkip, // game fixes (fixes.cpp)
+    FixToolInput, KeypadFix, SpeedUp, QuickInteract, HudAutoHide, HudLeftoversAlways, CutsceneSkip, // game fixes (fixes.cpp)
     Minimap, MinimapRotate, MinimapAlways, MinimapScreenEdge, MinimapFrame, // minimap.cpp
     PauseMenuEntry, SimplePrompts, PromptBrackets, // uitweaks.cpp
     Esp, EspBox, EspHealth, EspName, EspDistance, EspSkeleton, EspHead, EspChams, EspSnaplines, EspOffscreen,

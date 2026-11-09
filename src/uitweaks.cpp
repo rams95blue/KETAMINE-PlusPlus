@@ -339,7 +339,8 @@ void TickPauseMenu(UObject* pc)
 
 struct HiddenW {
     Weak w;
-    uint8_t vis; // the visibility it had
+    uint8_t vis;   // the visibility it had
+    float opacity; // and its render opacity
 };
 struct Label {
     Weak original, ours;
@@ -370,12 +371,16 @@ void LoadPromptClasses()
 }
 
 // A prompt is on the HUD, never inside a menu, the map, the shop or the options.
+// Only the widgets that own it count (a world-space prompt's owner can be an actor, like the save point's
+// BP_TASK_SavePoint_C: its name isn't a menu).
 bool InMenu(UObject* w)
 {
     int depth = 0;
-    for (UObject* o = OuterOf(w); o && depth < 12; o = OuterOf(o), depth++) {
+    for (UObject* o = OuterOf(w); o && depth < 16; o = OuterOf(o), depth++) {
         std::string c = ClassName(o);
-        for (const char* k : {"Menu", "Map", "Shop", "Options", "Storage", "Puzzle", "Save", "Load", "Death"})
+        if (c == "WidgetTree") continue;
+        if (!Ptr(o, "WidgetTree")) break; // not a user widget any more: an actor, a controller, the game instance
+        for (const char* k : {"Menu", "Map", "Shop", "Options", "Storage", "Puzzle", "SaveScreen", "LoadScreen", "Death"})
             if (Has(c, k)) return true;
     }
     return false;
@@ -392,7 +397,7 @@ bool PromptClass(const std::string& cls)
 // Texts and images of one prompt. Nested prompts (a key hint inside an interact prompt) are walked too.
 void Collect(UObject* w, int depth, std::vector<UObject*>& texts, std::vector<UObject*>& images)
 {
-    if (!w || depth > 12) return;
+    if (!w || depth > 18) return;
     std::string c = ClassName(w);
     if (IsText(w)) texts.push_back(w);
     else if (c == "Image" || c == "MaterialImage") images.push_back(w);
@@ -425,13 +430,24 @@ uint8_t VisOf(UObject* w)
     uint8_t* v = Member<uint8_t>(w, "Visibility");
     return v ? *v : 0;
 }
-// Hidden (not collapsed: the layout stays), and kept hidden: the game's animations may show it again.
+// Hidden (not collapsed: the layout stays) and transparent, and kept so: some prompts (the save point's) set their
+// pieces' visibility again every frame, so the opacity keeps them invisible in between.
+float OpacityOf(UObject* w)
+{
+    float* o = Member<float>(w, "RenderOpacity");
+    return o ? *o : 1.f;
+}
+void Enforce(UObject* w)
+{
+    uint8_t v = VisOf(w);
+    if (v != 1 && v != 2) Call(w, "SetVisibility").Arg(0, uint8_t(2)).Run();
+    if (OpacityOf(w) > 0.001f) Call(w, "SetRenderOpacity").Arg(0, 0.f).Run();
+}
 void HideW(UObject* w)
 {
     int32_t idx = ObjectIndex(w);
-    if (!g_sp.hidden.count(idx)) g_sp.hidden[idx] = {Weak(w), VisOf(w)};
-    uint8_t v = VisOf(w);
-    if (v != 1 && v != 2) Call(w, "SetVisibility").Arg(0, uint8_t(2)).Run();
+    if (!g_sp.hidden.count(idx)) g_sp.hidden[idx] = {Weak(w), VisOf(w), OpacityOf(w) > 0.001f ? OpacityOf(w) : 1.f};
+    Enforce(w);
 }
 
 // Our own plain text block showing the key, next to the game's (in the same panel, centred), in the game's font.
@@ -531,7 +547,10 @@ void ApplyPrompt(UObject* w)
 void RestorePrompts()
 {
     for (auto& [i, h] : g_sp.hidden)
-        if (UObject* w = h.w.Get()) Call(w, "SetVisibility").Arg(0, h.vis).Run();
+        if (UObject* w = h.w.Get()) {
+            Call(w, "SetVisibility").Arg(0, h.vis).Run();
+            Call(w, "SetRenderOpacity").Arg(0, h.opacity).Run();
+        }
     for (auto& [i, L] : g_sp.labels)
         if (UObject* o = L.ours.Get()) Call(o, "RemoveFromParent").Run();
     g_sp.hidden.clear();
@@ -553,8 +572,7 @@ void TickPrompts()
             it = g_sp.hidden.erase(it);
             continue;
         }
-        uint8_t v = VisOf(w);
-        if (v != 1 && v != 2) Call(w, "SetVisibility").Arg(0, uint8_t(2)).Run();
+        Enforce(w);
         ++it;
     }
     uint64_t t = GetTickCount64();

@@ -45,7 +45,7 @@ const ToggleInfo kToggles[ToggleCount] = {
      "Press jump as you land to chain hops: each chained hop keeps your air velocity and adds the gain, a perfectly "
      "timed one (within 30 ms of landing) adds double. Strafe while turning the mouse in the air to build speed.", true},
     {"BhopAuto", "Auto hop (hold the key)",
-     "Hold the jump key to hop on every landing instead of timing each press. Auto hops never count as perfect.", true},
+     "Hold the jump key to hop on every landing instead of timing each press. Auto hops never count as perfect."},
     {"BhopHud", "Hop readout", "Shows each hop's timing (PERFECT / GOOD / LATE), gain and speed near the crosshair."},
     {"Speedometer", "Speedometer", "Your horizontal speed under the crosshair, all the time, in the unit below."},
     {"FreezeAI", "Freeze enemies", "Enemies stop moving and attacking."},
@@ -72,8 +72,10 @@ const ToggleInfo kToggles[ToggleCount] = {
      "Item pickups (upgrades included) and ladders complete faster when you hold E, and ladder climbs play faster. "
      "A tap still works as normal; bear traps and other scripted holds keep their speed.", true},
     {"HudAutoHide", "Hide leftover HUD when idle",
-     "When the game's dynamic HUD has faded most of itself, the elements that never fade (the \"DROP [Z]\" prompt of "
-     "breakable melee weapons) fade too after the delay below, and come back with the rest of the HUD.", true},
+     "When the game's dynamic HUD has faded most of itself, the pieces that never fade (the \"DROP [Z]\" prompt of "
+     "breakable melee weapons, the flashlight toggle, the crafting icon) fade too after the delay below, and come back with the rest of the HUD.", true},
+    {"HudLeftoversAlways", "Always hide them",
+     "Those pieces stay hidden all the time, whatever the HUD does (the delay is ignored)."},
     {"CutsceneSkip", "Auto-skip cutscenes",
      "Skips every cutscene the game lets you skip, through its own skip, a second after it starts."},
     {"Minimap", "Minimap",
@@ -111,7 +113,7 @@ const ValueInfo kValues[ValueCount] = {
     {"TimeScale", 1, 0.1f, 4}, {"KillRadius", 20, 5, 100},
     {"EspRange", 80, 10, 300}, {"EspWorldRange", 30, 5, 150}, {"AimFov", 8, 1, 45},
     {"WorldFov", 120, 30, 150}, {"ViewmodelFov", 110, 0, 150}, {"AdsFov", 90, 0, 150}, {"FovBlend", 0.25f, 0, 2},
-    {"InteractHold", 0.3f, 0.1f, 1.0f}, {"LadderSpeed", 1.6f, 1.0f, 3.0f}, {"HudIdleDelay", 4.0f, 1.0f, 30.0f},
+    {"InteractHold", 0.3f, 0.1f, 1.0f}, {"LadderSpeed", 1.6f, 1.0f, 3.0f}, {"HudIdleDelay", 1.0f, 0.0f, 30.0f},
     {"SaveSpeed", 2.5f, 1, 5}, {"ConfigSpeed", 2.0f, 1, 5}, {"BoatSpeed", 3.5f, 1, 6},
     {"CylinderSpeed", 2.0f, 1, 5}, {"CylinderInputSpeed", 3.0f, 1, 6}, {"PillarSpeed", 3.5f, 1, 6},
     {"BhopGain", 10, 0, 25}, {"BhopCap", 0, 0, 10}, {"BhopAirStrafe", 10, 0, 30}, {"SpeedUnit", 0, 0, 3},

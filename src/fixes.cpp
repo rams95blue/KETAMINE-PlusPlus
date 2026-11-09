@@ -1129,6 +1129,10 @@ void TickSpeedUp(uint64_t now, std::string& why)
 // player info panel (W_PlayerInfo_C: health and the rest), which the game hides when it goes idle. Once it has been
 // hidden for the delay, the leftover pieces are faded (render opacity 0, kept at 0 while idle) and come back with the
 // HUD. The pieces are "Class:WidgetName" pairs, KetaminePlusPlus.ini [HudIdle] Leftovers.
+// The DROP [Z] hint, the flashlight toggle (X) and the crafting (wrench) icon.
+constexpr const char* kLeftovers = "W_ToolUseParent_C:SizeBox_DropInput,"
+                                   "W_EquipmentLoadout_C:W_EquipmentLoadout_SlotSmall_Flashlight,"
+                                   "W_EquipmentLoadout_C:Overlay_CraftableIcon";
 struct HudElem {
     Weak w;
     float orig;
@@ -1157,7 +1161,7 @@ bool GameShown(UObject* w) // visibility only: what the game itself shows (our f
 
 UObject* FindByName(UObject* w, const std::string& name, int depth)
 {
-    if (!w || depth > 12) return nullptr;
+    if (!w || depth > 16) return nullptr;
     if (Name(w) == name) return w;
     std::vector<UObject*> kids;
     WidgetChildren(w, kids, 64);
@@ -1182,7 +1186,7 @@ void TickHudIdle(UObject* player, uint64_t now)
     }
     if (!g_hud.loaded) {
         g_hud.loaded = true;
-        std::stringstream ss(cfg::GetString("HudIdle", "Leftovers", "W_ToolUseParent_C:SizeBox_DropInput"));
+        std::stringstream ss(cfg::GetString("HudIdle", "Leftovers", kLeftovers));
         for (std::string item; std::getline(ss, item, ',');) {
             size_t c = item.find(':');
             if (c != std::string::npos) g_hud.targets.push_back({item.substr(0, c), item.substr(c + 1)});
@@ -1216,7 +1220,8 @@ void TickHudIdle(UObject* player, uint64_t now)
     if (now - g_hud.pollAt < 100) return;
     g_hud.pollAt = now;
     UObject* info = g_hud.info.Get();
-    bool idle = info ? !Shown(info) : true; // without the panel: leftovers fade after the delay they've been showing
+    bool always = g_on[feat::HudLeftoversAlways];
+    bool idle = always || (info ? !Shown(info) : true); // without the panel: leftovers fade after the delay
     double t = Now();
     if (!idle) {
         if (!g_hud.forced.empty()) RestoreHud();
@@ -1224,7 +1229,7 @@ void TickHudIdle(UObject* player, uint64_t now)
         return;
     }
     if (!g_hud.idleSince) g_hud.idleSince = t;
-    if (t - g_hud.idleSince < g_value[feat::HudIdleDelay]) return;
+    if (!always && t - g_hud.idleSince < g_value[feat::HudIdleDelay]) return;
     for (const Weak& wk : g_hud.leftovers) {
         UObject* e = wk.Get();
         if (!e || !GameShown(e)) continue;
@@ -1288,7 +1293,7 @@ bool EditsAvailable() { return hooks::CanEdit(); }
 // widgets, each behind its own guard.
 static void DumpWidget(UObject* w, int depth, int& budget)
 {
-    if (!w || depth > 14 || budget-- <= 0) return;
+    if (!w || depth > 22 || budget-- <= 0) return;
     std::string line(size_t(depth * 2), ' ');
     line += Name(w) + " [" + ClassName(w) + "]";
     if (!Shown(w)) line += " (hidden)";

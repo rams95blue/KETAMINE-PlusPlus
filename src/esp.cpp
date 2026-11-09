@@ -1,4 +1,5 @@
 #include "esp.h"
+#include "config.h"
 #include "features.h"
 #include "text.h"
 #include "theme.h"
@@ -9,7 +10,52 @@
 #include <cstdio>
 
 namespace esp {
+
+// ESP colours by type, independent of the menu skin (a light skin's black text was unreadable over the game).
+const ColorInfo kColors[ColorCount] = {
+    {"Box", "Enemy box", 0xFF4F5E},         {"Name", "Enemy name", 0xFFFFFF},
+    {"Distance", "Enemy distance", 0xFFD166}, {"Health", "Health bar", 0x3DDC84},
+    {"Skeleton", "Skeleton", 0xFFFFFF},     {"Head", "Head marker", 0xFF4F5E},
+    {"Chams", "Chams", 0xFF4F5E},           {"Snaplines", "Snaplines", 0xFF4F5E},
+    {"Offscreen", "Off-screen arrows", 0xFFD166}, {"Items", "Items", 0x7CFFB2},
+    {"Containers", "Containers", 0xFFB347}, {"SavePoints", "Save points", 0x66CCFF},
+    {"Labels", "Object names", 0xFFFFFF},   {"AimCircle", "Aim FOV circle", 0xFFFFFF},
+};
+unsigned g_color[ColorCount] = {}; // 0xRRGGBB
+bool g_colorsLoaded = false;
+
+void LoadColors()
+{
+    for (int i = 0; i < ColorCount; i++) {
+        std::string v = cfg::GetString("EspColors", kColors[i].key, "");
+        g_color[i] = v.size() == 7 && v[0] == '#' ? unsigned(strtoul(v.c_str() + 1, nullptr, 16)) : kColors[i].def;
+    }
+    g_colorsLoaded = true;
+}
+unsigned GetColor(int i)
+{
+    if (!g_colorsLoaded) LoadColors();
+    return g_color[i];
+}
+void SetColor(int i, unsigned rgb)
+{
+    if (!g_colorsLoaded) LoadColors();
+    g_color[i] = rgb & 0xFFFFFF;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "#%06X", g_color[i]);
+    cfg::SetString("EspColors", kColors[i].key, buf);
+}
+void ResetColors()
+{
+    for (int i = 0; i < ColorCount; i++) SetColor(i, kColors[i].def);
+}
+
 namespace {
+ImVec4 C(int i, float alpha = 1.f)
+{
+    unsigned c = GetColor(i);
+    return {((c >> 16) & 255) / 255.f, ((c >> 8) & 255) / 255.f, (c & 255) / 255.f, alpha};
+}
 
 using feat::g_on;
 using feat::Vec3;
@@ -85,11 +131,11 @@ void Arrow(ImDrawList* dl, const View& v, const Vec3& w, float distance, float s
     ImVec2 dir{std::cos(ang), std::sin(ang)}, n{-dir.y, dir.x};
     ImVec2 tip{v.cx + dir.x * (ring + size), v.cy + dir.y * (ring + size)}, base{v.cx + dir.x * ring, v.cy + dir.y * ring};
     ImVec2 l{base.x + n.x * size * 0.6f, base.y + n.y * size * 0.6f}, r{base.x - n.x * size * 0.6f, base.y - n.y * size * 0.6f};
-    dl->AddTriangleFilled(tip, l, r, Raw(Pink));
+    dl->AddTriangleFilled(tip, l, r, Raw(C(Offscreen)));
     dl->AddTriangle(tip, l, r, Raw(Alpha(Black, 0.9f)), 1.2f * s);
     char text[16];
     snprintf(text, sizeof(text), "%.0fm", distance);
-    LabelCentered(dl, regular, 11 * s, base.x - dir.x * 12 * s, base.y - dir.y * 12 * s - 6 * s, Pink, text);
+    LabelCentered(dl, regular, 11 * s, base.x - dir.x * 12 * s, base.y - dir.y * 12 * s - 6 * s, C(Offscreen), text);
 }
 
 void DrawEnemy(ImDrawList* dl, const View& v, const feat::EspEnemy& e, float s)
@@ -110,7 +156,7 @@ void DrawEnemy(ImDrawList* dl, const View& v, const feat::EspEnemy& e, float s)
         return true;
     };
     if (g_on[feat::EspChams] && !e.bones.empty()) { // see-through body silhouette built from the bones
-        ImU32 fill = Raw(Alpha(Violet, 0.42f));
+        ImU32 fill = Raw(C(Chams, 0.42f));
         for (const auto& [p0, p1] : e.bones) {
             ImVec2 s0, s1;
             double depth;
@@ -130,7 +176,7 @@ void DrawEnemy(ImDrawList* dl, const View& v, const feat::EspEnemy& e, float s)
             double depth;
             if (!bone(p0, p1, s0, s1, depth)) continue;
             dl->AddLine(s0, s1, Raw(Alpha(Black, 0.6f)), 3.f * s);
-            dl->AddLine(s0, s1, Raw(Text), 1.4f * s);
+            dl->AddLine(s0, s1, Raw(C(Skeleton)), 1.4f * s);
         }
     if (g_on[feat::EspHead] && e.hasHead) {
         ImVec2 hp;
@@ -138,25 +184,25 @@ void DrawEnemy(ImDrawList* dl, const View& v, const feat::EspEnemy& e, float s)
         if (Project(v, e.head, hp, &hd)) {
             float r = std::clamp(float(10.0 * v.focal / hd), 3.f, 40.f);
             dl->AddCircle(hp, r, Raw(Alpha(Black, 0.8f)), 20, 3.f * s);
-            dl->AddCircle(hp, r, Raw(Pink), 20, 1.5f * s);
+            dl->AddCircle(hp, r, Raw(C(Head)), 20, 1.5f * s);
         }
     }
-    if (g_on[feat::EspSnaplines]) dl->AddLine({v.cx, ImGui::GetIO().DisplaySize.y},{(a.x + b.x) * 0.5f, b.y}, Raw(Alpha(Violet, 0.8f)), 1.f * s);
+    if (g_on[feat::EspSnaplines]) dl->AddLine({v.cx, ImGui::GetIO().DisplaySize.y},{(a.x + b.x) * 0.5f, b.y}, Raw(C(Snaplines, 0.8f)), 1.f * s);
     if (g_on[feat::EspBox]) {
         dl->AddRect({a.x - 1, a.y - 1}, {b.x + 1, b.y + 1}, Raw(Alpha(Black, 0.85f)), 0, 0, 3.f * s);
-        dl->AddRect(a, b, Raw(Violet), 0, 0, 1.4f * s);
+        dl->AddRect(a, b, Raw(C(Box)), 0, 0, 1.4f * s);
     }
     if (g_on[feat::EspHealth] && e.maxHealth > 0) {
         float frac = std::clamp(e.health / e.maxHealth, 0.f, 1.f), bw = 3.f * s, x1 = a.x - 4 * s, x0 = x1 - bw;
         dl->AddRectFilled({x0 - 1, a.y - 1}, {x1 + 1, b.y + 1}, Raw(Alpha(Black, 0.85f)));
-        dl->AddRectFilled({x0, b.y - (b.y - a.y) * frac}, {x1, b.y}, Raw(Pink));
+        dl->AddRectFilled({x0, b.y - (b.y - a.y) * frac}, {x1, b.y}, Raw(C(Health)));
     }
     float size = 13 * s, cx = (a.x + b.x) * 0.5f;
-    if (g_on[feat::EspName]) LabelCentered(dl, bold, size, cx, a.y - size - 4 * s, Text, e.name.c_str());
+    if (g_on[feat::EspName]) LabelCentered(dl, bold, size, cx, a.y - size - 4 * s, C(Name), e.name.c_str());
     if (g_on[feat::EspDistance]) {
         char text[16];
         snprintf(text, sizeof(text), "%.0fm", e.distance);
-        LabelCentered(dl, regular, size * 0.92f, cx, b.y + 3 * s, Pink, text);
+        LabelCentered(dl, regular, size * 0.92f, cx, b.y + 3 * s, C(Distance), text);
     }
 }
 
@@ -164,7 +210,7 @@ void DrawThing(ImDrawList* dl, const View& v, const feat::EspThing& t, float s)
 {
     ImVec2 p;
     if (!Project(v, t.pos, p) || !OnScreen(p, 20)) return;
-    ImVec4 col = t.kind == feat::EspKind::Item ? Pink : t.kind == feat::EspKind::Container ? Violet : Text;
+    ImVec4 col = C(t.kind == feat::EspKind::Item ? Items : t.kind == feat::EspKind::Container ? Containers : SavePoints);
     float r = 3.5f * s;
     dl->AddCircleFilled(p, r + 1.2f * s, Raw(Alpha(Black, 0.9f)), 12);
     dl->AddCircleFilled(p, r, Raw(col), 12);
@@ -173,7 +219,7 @@ void DrawThing(ImDrawList* dl, const View& v, const feat::EspThing& t, float s)
     snprintf(dist, sizeof(dist), "  %.0fm", t.distance);
     float size = 12 * s;
     ImVec2 at{p.x + r + 5 * s, p.y - size * 0.55f};
-    Label(dl, regular, size, at, Text, label.c_str());
+    Label(dl, regular, size, at, C(Labels), label.c_str());
     Label(dl, regular, size, {at.x + regular->CalcTextSizeA(size, FLT_MAX, 0, label.c_str()).x, at.y}, col, dist);
 }
 
@@ -193,7 +239,7 @@ void Draw()
         float t = float(std::tan(feat::g_value[feat::AimFov] * kDeg));
         ImVec2 c{v.cx, v.cy}, rad{t * v.fx, t * v.fy}; // the same angle in both directions
         dl->AddEllipse(c, rad, Raw(Alpha(Black, 0.5f)), 0, 96, 3.f * s);
-        dl->AddEllipse(c, rad, Raw(Alpha(Violet, 0.85f)), 0, 96, 1.3f * s);
+        dl->AddEllipse(c, rad, Raw(C(AimCircle, 0.85f)), 0, 96, 1.3f * s);
     }
     if (!g_on[feat::Esp] || !f.active) return;
 

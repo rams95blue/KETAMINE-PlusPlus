@@ -704,6 +704,25 @@ void TabEsp(const feat::Snapshot& s)
     for (Toggle t : {feat::EspItems, feat::EspContainers, feat::EspSavePoints}) ToggleRow(t, s);
     SliderRow(feat::EspWorldRange, "Object range", "%.0f m", s, "Objects farther than this are not shown.");
     ImGui::EndDisabled();
+    Section("COLOURS");
+    // Two pickers per row: label, then its colour button.
+    const ImGuiColorEditFlags flags = ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoAlpha;
+    float av = ImGui::GetContentRegionAvail().x, x0 = ImGui::GetCursorPosX();
+    for (int i = 0; i < esp::ColorCount; i++) {
+        float col = x0 + (i % 2) * av * 0.5f;
+        if (i % 2) ImGui::SameLine(col);
+        else ImGui::SetCursorPosX(col);
+        unsigned c = esp::GetColor(i);
+        float rgb[3] = {((c >> 16) & 255) / 255.f, ((c >> 8) & 255) / 255.f, (c & 255) / 255.f};
+        ImGui::PushID(i);
+        if (ImGui::ColorEdit3("##espcol", rgb, flags)) esp::SetColor(i, theme::ToHex({rgb[0], rgb[1], rgb[2], 1}));
+        ImGui::PopID();
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(T(esp::kColors[i].label));
+    }
+    if (ImGui::Button(T("Reset colours"))) esp::ResetColors();
+    Hint("ESP colours don't follow the skin, so they stay readable over the game.");
 }
 
 void TabInventory(const feat::Snapshot& s)
@@ -981,7 +1000,10 @@ void TabFixes(const feat::Snapshot& s)
     Section("HUD");
     ToggleRow(feat::HudAutoHide, s);
     ImGui::BeginDisabled(!feat::g_on[feat::HudAutoHide]);
-    SliderRow(feat::HudIdleDelay, "Idle delay", "%.0f s", s, "How long most of the HUD must stay faded before the rest fades.");
+    ToggleRow(feat::HudLeftoversAlways, s);
+    ImGui::BeginDisabled(feat::g_on[feat::HudLeftoversAlways]);
+    SliderRow(feat::HudIdleDelay, "Idle delay", "%.1f s", s, "How long most of the HUD must stay faded before the rest fades.");
+    ImGui::EndDisabled();
     ImGui::EndDisabled();
     Section("CUTSCENES");
     ToggleRow(feat::CutsceneSkip, s);

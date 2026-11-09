@@ -13,7 +13,7 @@
   <a href="https://github.com/rams95blue/KETAMINE-PlusPlus/releases">Download</a> ·
   <a href="KETAMINE++.md">Changes &amp; technical notes</a> ·
   <a href="https://github.com/rams95blue/KETAMINE-PlusPlus/issues">Report a bug</a> ·
-  <a href="https://www.nexusmods.com/clivebarkershellraiserrevival/mods/47">Nexus page)</a>
+  <a href="docs/nexus/description.bbcode">Nexus page (BBCode)</a>
 </p>
 
 ---
@@ -47,7 +47,7 @@ rewritten natively (C++, no UE4SS, no Lua), with new features on top:
 - **Minimap** (True Minimap): square, circle, octagon or diamond, rotating with you or north-up, framed in your
   skin's colour, without the original's stutter.
 - **Fixes** (uwumatic101): movement kept after tools, keypad input, sped-up save points / puzzles / pillars / boat,
-  quick interact, cutscene auto-skip; plus hiding the "DROP [Z]" hint when the HUD goes idle.
+  quick interact, cutscene auto-skip; plus hiding the "DROP [Z]" hint, flashlight toggle and crafting icon when the HUD goes idle.
 - **Simple prompts** (experimental): prompts become plain text, `[F] Barter`, in your colour and size.
 - **Pause menu entry**: a KETAMINE++ item under the game's pause menu.
 - **18 skins + your own**: retro Windows (Win95, Black Hat, Zero Day), terminal (Phosphor, Amber CRT, Root Shell,
@@ -72,7 +72,7 @@ Linux / Steam Deck (Proton): add `WINEDLLOVERRIDES="winmm=n,b" %command%` to the
 1. **Open** with F1 / F8 (the X closes it), or click **KETAMINE++** in the pause menu.
 2. **Skin**: Settings → Skin. Win95 is the default.
 3. **Jump**: Space jumps but is also the game's Evade: rebind Evade in the game's Controls or pick another jump key.
-4. **Bunny hop**: hold jump (auto hop), or turn auto hop off and press jump as you land. Speedometer in Movement.
+4. **Bunny hop**: press jump as you land (manual timing, the default), or turn on Auto hop and hold the key. Speedometer in Movement.
 5. **FOV**: 120° / 110° / 90° by default; Page Up / Page Down in game, End toggles.
 6. **Minimap**: off by default; turn it on, and open the TAB map once per level.
 7. **Fixes**: all on except cutscene skip. If one acts odd after a game update, turn it off.

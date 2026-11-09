@@ -49,20 +49,28 @@ Remove TrueFOV's `winmm.dll`, and the UE4SS versions of the five fixes below (`u
   added to the game's own list of items, whose navigation code broke when 1.2.x put a copy of an item in it (the
   "can't move, can't look, can't open the menu" bug). Mouse only; the keys and the gamepad go through the game's items.
 - **Hide leftover HUD when idle** (Fixes tab, on by default): the game's dynamic HUD hides its player panel when nothing
-  happens, but the "DROP [Z]" hint of breakable melee weapons (W_ToolUseParent_C > SizeBox_DropInput) stays. Once the
+  happens, but some pieces stay: the "DROP [Z]" hint of breakable melee weapons (W_ToolUseParent_C > SizeBox_DropInput), the
+  flashlight toggle (W_EquipmentLoadout_SlotSmall_Flashlight) and the crafting wrench (Overlay_CraftableIcon). Once the
   player panel has been hidden for the delay, the hint fades too, and it comes back with the HUD. 1.3 looked for HUD
   widgets with "HUD" in their class name, and this game has none, so it did nothing. More pieces can be added in
-  KetaminePlusPlus.ini, [HudIdle] Leftovers=Class:WidgetName,...
-- **Simple prompts** (World tab, experimental, off by default): interaction and key hints lose all their artwork (key
+  KetaminePlusPlus.ini, [HudIdle] Leftovers=Class:WidgetName,... The delay is 1 s by default; "Always hide them"
+  keeps those pieces hidden all the time, whatever the HUD does.
+- **Simple prompts** (World tab, experimental, off by default; 1.4.1: save point prompts too, they are owned by the
+  save point actor and were mistaken for the save screen): interaction and key hints lose all their artwork (key
   cap, diamond, pulses, plates, hold rings) and become plain text in the game's font: the key as [F] and its
   description (Barter, Unlock, (Hold) Take) beside it, both in your colour, the key at your size and the description a
-  little smaller. The game's own texts are hidden and replaced by ours; what is hidden is re-hidden every frame, so the
-  game's animations can't bring the artwork back. Hints inside menus, the map and the shop are left alone, and so are
+  little smaller. The game's own texts are hidden and replaced by ours; what is hidden is re-hidden every frame and made
+  transparent as well, so neither the game's animations nor prompts that reset their pieces every frame (the save
+  point's) bring the artwork back. Hints inside menus, the map and the shop are left alone, and so are
   prompts showing a gamepad glyph instead of a key letter. Turning it off puts everything back.
 - **Dump on-screen UI** (Settings): logs every widget on screen, to help add UI features. The crashes after a dump came
   from reading texts: UE5's FText is 16 bytes and the dump copied 24, overwriting the returned string, which the engine
   then freed. Every text call now takes its size from the function itself. Hidden screens take one line each, so the
   HUD fits in the log too.
+- **ESP colours** (ESP tab): a colour for each kind of thing (enemy box, name, distance, health bar, skeleton, head,
+  chams, snaplines, off-screen arrows, items, containers, save points, object names, aim circle), saved in
+  KetaminePlusPlus.ini [EspColors]. The ESP no longer follows the skin: Win95's black text and navy accent were
+  unreadable over the game.
 - **Close button**: an X at the top right of the menu closes it (as do F1 / F8).
 - **Skinned cursor**: while the menu is open its own cursor is drawn on top of everything: the Windows 9x pixel arrow
   in retro skins, the same arrow in the accent colour in terminal skins, a smooth arrow in the others.
@@ -78,7 +86,7 @@ Remove TrueFOV's `winmm.dll`, and the UE4SS versions of the five fixes below (`u
   accent and highlight colors, plus window opacity.
 
 ## Defaults
-F1 and F8 open the menu, 100% UI scale, Win95 skin at full opacity. On: jump (x1.2) and auto bunny hop, skip intros,
+F1 and F8 open the menu, 100% UI scale, Win95 skin at full opacity. On: jump (x1.2) and bunny hop with manual timing (auto hop off), skip intros,
 FOV editor (world 120, viewmodel 110, aiming 90, sprint / ladder effects kept), every fix except cutscene skip, look
 straight up and down, idle HUD hiding, pause menu entry. Off: hop readout, aim FOV circle, cutscene skip, minimap
 (circle, x1.6 zoom, rotating with you so your forward points up), simple prompts. Settings, Reset configuration
