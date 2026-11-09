@@ -12,8 +12,12 @@ namespace feat {
 enum Toggle {
     GodMode, InfiniteHealth, NoSprintCooldown, OneHitKill, Invisible,
     InfiniteAmmo, NoSufferingCost, NoPowerCooldown, Unbreakable, SilentAim,
-    Fly, Noclip,
+    Fly, Noclip, UnlockPitch, Jump, Bhop, BhopAuto, BhopHud, Speedometer,
     FreezeAI, HideHUD, FreeCam, PauseTime, AutoLockpick, SkipIntros,
+    CustomFov, FovKeepEffects, // FOV editor (fov.cpp)
+    FixToolInput, KeypadFix, SpeedUp, QuickInteract, HudAutoHide, CutsceneSkip, // game fixes (fixes.cpp)
+    Minimap, MinimapRotate, MinimapAlways, MinimapScreenEdge, MinimapFrame, // minimap.cpp
+    PauseMenuEntry, SimplePrompts, PromptBrackets, // uitweaks.cpp
     Esp, EspBox, EspHealth, EspName, EspDistance, EspSkeleton, EspHead, EspChams, EspSnaplines, EspOffscreen,
     EspItems, EspContainers, EspSavePoints, EspAimFov,
     ToggleCount
@@ -28,7 +32,16 @@ struct ToggleInfo {
 extern const ToggleInfo kToggles[ToggleCount];
 extern std::atomic<bool> g_on[ToggleCount];
 
-enum Value { DamageMult, SpeedMult, JumpMult, TimeScale, Fov, KillRadius, EspRange, EspWorldRange, AimFov, ValueCount };
+enum Value {
+    DamageMult, SpeedMult, JumpMult, TimeScale, KillRadius, EspRange, EspWorldRange, AimFov,
+    WorldFov, ViewmodelFov, AdsFov, FovBlend, // FOV editor (fov.cpp); ViewmodelFov / AdsFov 0 = follow
+    InteractHold, LadderSpeed, HudIdleDelay, // game fixes (fixes.cpp)
+    SaveSpeed, ConfigSpeed, BoatSpeed, CylinderSpeed, CylinderInputSpeed, PillarSpeed, // speed up interactions
+    BhopGain, BhopCap, BhopAirStrafe, SpeedUnit, // jump.cpp (BhopCap 0 = unlimited; SpeedUnit: menu.cpp kUnits)
+    MinimapSize, MinimapZoom, MinimapOpacity, MinimapShape, MinimapOffsetX, MinimapOffsetY, // minimap.cpp
+    PromptSize, // uitweaks.cpp
+    ValueCount
+};
 struct ValueInfo {
     const char* key;
     float def, min, max;

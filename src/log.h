@@ -3,7 +3,16 @@
 #include <cstdarg>
 #include <cstdio>
 #include <mutex>
+#include <share.h>
 #include <string>
+
+// SEH (__try) only covers faults inside calls when the compiler doesn't model faulting loads (clang on MinGW, or any
+// build without /EHa): code that may fault inside a __try goes through a function that is never inlined.
+#if defined(_MSC_VER) && !defined(__clang__)
+#define KM_NOINLINE __declspec(noinline)
+#else
+#define KM_NOINLINE __attribute__((noinline))
+#endif
 
 namespace km {
 
@@ -23,7 +32,7 @@ inline void Log(const char* fmt, ...)
 {
     static std::mutex m;
     std::lock_guard lock(m);
-    static FILE* f = _wfsopen((g_dir + L"KetamineMenu.log").c_str(), L"w", _SH_DENYNO);
+    static FILE* f = _wfsopen((g_dir + L"KetaminePlusPlus.log").c_str(), L"w", _SH_DENYNO);
     if (!f) return;
     SYSTEMTIME t;
     GetLocalTime(&t);

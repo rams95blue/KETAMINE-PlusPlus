@@ -1,5 +1,6 @@
 #pragma once
-// KetamineMenu.ini next to the DLL (plain Win32 profile API: readable and editable by hand).
+// KetaminePlusPlus.ini next to the DLL (plain Win32 profile API: readable and editable by hand). A KetamineMenu.ini
+// from the original Ketamine Menu is copied over on first run, so settings carry over.
 #include "log.h"
 
 #include <cstdio>
@@ -7,7 +8,16 @@
 
 namespace cfg {
 
-inline std::wstring Path() { return km::g_dir + L"KetamineMenu.ini"; }
+inline std::wstring Path()
+{
+    static const std::wstring path = [] {
+        std::wstring now = km::g_dir + L"KetaminePlusPlus.ini", old = km::g_dir + L"KetamineMenu.ini";
+        if (GetFileAttributesW(now.c_str()) == INVALID_FILE_ATTRIBUTES && GetFileAttributesW(old.c_str()) != INVALID_FILE_ATTRIBUTES)
+            CopyFileW(old.c_str(), now.c_str(), TRUE);
+        return now;
+    }();
+    return path;
+}
 
 inline std::wstring W(const char* s) { return std::wstring(s, s + strlen(s)); } // keys are ASCII
 

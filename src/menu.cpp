@@ -2,6 +2,10 @@
 #include "config.h"
 #include "esp.h"
 #include "features.h"
+#include "fixes.h"
+#include "fov.h"
+#include "jump.h"
+#include "minimap.h"
 #include "lang.h"
 #include "log.h"
 #include "overlay.h"
@@ -26,20 +30,35 @@ using feat::Value;
 using namespace theme;
 using lang::T;
 
-constexpr int kNotBinding = -1, kBindMenu = -2, kBindMenu2 = -3;
+constexpr int kNotBinding = -1, kBindMenu = -2, kBindMenu2 = -3, kBindFovUp = -4, kBindFovDown = -5, kBindJump = -6;
 constexpr double kToastLife = 2.2;
 constexpr float kBaseFont = 16.f;
-const char* const kTabs[] = {"Player", "Combat", "Movement", "ESP", "Inventory", "World", "Progress", "Settings"};
+const char* const kTabs[] = {"Player", "Combat", "Movement", "ESP", "Inventory", "World", "FOV", "Minimap", "Fixes", "Progress", "Settings"};
 constexpr int kTabCount = IM_ARRAYSIZE(kTabs);
 
 HMODULE g_module;
 std::atomic<bool> g_open;
-std::atomic<unsigned> g_menuKey{VK_INSERT};
+std::atomic<unsigned> g_menuKey{VK_F1};
 std::atomic<unsigned> g_menuKey2{VK_F8}; // second menu key: not every keyboard has Insert (0 = none)
 std::atomic<int> g_hotkey[feat::ToggleCount];
+std::atomic<unsigned> g_fovUp{VK_PRIOR}, g_fovDown{VK_NEXT}; // World FOV steps, menu closed (0 = none)
 std::atomic<int> g_binding{kNotBinding};
 float g_scale = 0; // 0 = automatic, from the screen height
 float g_appliedScale = -1;
+struct FontPair {
+    ImFont* regular = nullptr;
+    ImFont* bold = nullptr;
+};
+FontPair g_fonts[3]; // by theme::Style
+bool g_themeDirty = false; // palette or opacity changed: re-apply the theme at the start of the next frame
+int DefaultSkin() // Win95
+{
+    for (int i = 0; i < theme::kSkinCount; i++)
+        if (!strcmp(theme::kSkins[i].name, "Win95")) return i;
+    return 0;
+}
+int g_skin = DefaultSkin();
+unsigned g_accent = 0x1EF8FF, g_highlight = 0xECECEC;
 int g_tab = 0;
 std::string g_game, g_cpu, g_ram; // footer; the GPU comes from the overlay
 
@@ -52,6 +71,18 @@ std::mutex g_toastMutex;
 std::deque<Toast> g_toasts;
 
 double Now() { return GetTickCount64() / 1000.0; }
+double PreciseNow()
+{
+    static const double freq = [] {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        return double(f.QuadPart);
+    }();
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    return double(c.QuadPart) / freq;
+}
+int DefaultHotkey(int t) { return t == feat::CustomFov ? VK_END : 0; } // End: FOV editor on/off, as in TrueFOV
 float S() { return g_appliedScale; }
 
 void PushToast(std::string text, int state)
@@ -188,7 +219,7 @@ void ApplyTheme(float scale)
     ImVec4* c = st.Colors;
     c[ImGuiCol_Text] = Text;
     c[ImGuiCol_TextDisabled] = Muted;
-    c[ImGuiCol_WindowBg] = Bg;
+    c[ImGuiCol_WindowBg] = Alpha(Bg, Opacity);
     c[ImGuiCol_ChildBg] = Panel;
     c[ImGuiCol_PopupBg] = Panel2;
     c[ImGuiCol_Border] = Border;
@@ -217,7 +248,34 @@ void ApplyTheme(float scale)
     c[ImGuiCol_TextSelectedBg] = Alpha(Violet, 0.35f);
     c[ImGuiCol_NavCursor] = Violet;
     c[ImGuiCol_ModalWindowDimBg] = Alpha(Black, 0.55f);
+    if (Style != StyleModern) {
+        st.WindowRounding = st.ChildRounding = st.FrameRounding = st.PopupRounding = st.GrabRounding = st.ScrollbarRounding = 0;
+        st.ScrollbarSize = 12;
+        st.FrameBorderSize = 1;
+        st.GrabMinSize = 14;
+        c[ImGuiCol_ScrollbarBg] = Panel2;
+    }
+    if (Style == StyleRetro) { // bevels: a light edge with a dark shadow under it, like Windows 9x controls
+        st.WindowBorderSize = 2;
+        st.ChildBorderSize = 1;
+        c[ImGuiCol_Border] = Border;
+        c[ImGuiCol_BorderShadow] = Mix(Black, Bg, 0.35f);
+        c[ImGuiCol_ScrollbarGrab] = Panel2;
+        c[ImGuiCol_ScrollbarGrabHovered] = Mix(Panel2, Border, 0.4f);
+        c[ImGuiCol_Header] = Alpha(Violet, 0.85f); // selection: accent with readable text below
+        c[ImGuiCol_HeaderHovered] = Alpha(Violet, 0.6f);
+        c[ImGuiCol_HeaderActive] = Violet;
+    }
+    if (Style == StyleTerminal) c[ImGuiCol_Border] = Mix(Border, Violet, 0.35f);
+    // The font of the look (Inter, Tahoma or Consolas); a missing one falls back to Inter.
+    const FontPair& fp = g_fonts[Style].regular ? g_fonts[Style] : g_fonts[StyleModern];
+    if (fp.regular) {
+        regular = fp.regular, bold = fp.bold ? fp.bold : fp.regular;
+        ImGui::GetIO().FontDefault = regular;
+    }
     st.ScaleAllSizes(scale);
+    // ScaleAllSizes rounds the cursor scale down: any UI scale below 100% made it 0 and the mouse cursor vanished.
+    st.MouseCursorScale = std::max(1.f, scale);
 }
 
 // ---------------------------------------------------------------- widgets
@@ -256,10 +314,17 @@ bool Switch(const char* id, bool* v)
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 a{p.x, p.y + (frameH - h) * 0.5f}, b{a.x + w, a.y + h};
     ImVec4 off = ImGui::IsItemHovered() ? Mix(Panel2, Border, 0.8f) : Panel2;
-    dl->AddRectFilled(a, b, U32(Mix(off, Violet, t)), h * 0.5f);
-    if (t < 0.99f) dl->AddRect(a, b, U32(Alpha(Border, 1 - t)), h * 0.5f);
+    dl->AddRectFilled(a, b, U32(Mix(off, Violet, t)), R(h * 0.5f));
+    if (t < 0.99f) dl->AddRect(a, b, U32(Alpha(Border, 1 - t)), R(h * 0.5f));
     float r = h * 0.5f - 3.f * S();
-    dl->AddCircleFilled({a.x + h * 0.5f + t * (w - h), a.y + h * 0.5f}, r, U32(Mix(Muted, Text, t)), 20);
+    ImVec2 c{a.x + h * 0.5f + t * (w - h), a.y + h * 0.5f};
+    if (Style == StyleModern) {
+        dl->AddCircleFilled(c, r, U32(Mix(Muted, Text, t)), 20);
+    } else { // square knob, in a colour that reads on the accent
+        float lum = Violet.x * 0.3f + Violet.y * 0.59f + Violet.z * 0.11f;
+        ImVec4 on = lum < 0.5f ? ImVec4{1, 1, 1, 1} : ImVec4{0, 0, 0, 1};
+        dl->AddRectFilled({c.x - r, c.y - r}, {c.x + r, c.y + r}, U32(Mix(Muted, on, t)));
+    }
     return clicked;
 }
 
@@ -280,8 +345,9 @@ void Section(const char* title)
     float s = S();
     ImGui::Dummy({0, 6 * s});
     ImGui::PushFont(bold, kBaseFont * 0.78f);
-    ImGui::PushStyleColor(ImGuiCol_Text, Muted);
-    ImGui::TextUnformatted(T(title));
+    ImGui::PushStyleColor(ImGuiCol_Text, Style == StyleTerminal ? Violet : Muted);
+    if (Style == StyleTerminal) ImGui::Text("> %s", T(title));
+    else ImGui::TextUnformatted(T(title));
     ImGui::PopStyleColor();
     ImGui::PopFont();
     ImVec2 p = ImGui::GetCursorScreenPos();
@@ -297,8 +363,8 @@ void KeyBadge(const char* text)
     ImVec2 p = ImGui::GetCursorScreenPos();
     float h = ts.y + 4 * s, w = ts.x + 12 * s, y = p.y + (frameH - h) * 0.5f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled({p.x, y}, {p.x + w, y + h}, U32(Panel2), 5 * s);
-    dl->AddRect({p.x, y}, {p.x + w, y + h}, U32(Border), 5 * s);
+    dl->AddRectFilled({p.x, y}, {p.x + w, y + h}, U32(Panel2), R(5 * s));
+    dl->AddRect({p.x, y}, {p.x + w, y + h}, U32(Border), R(5 * s));
     dl->AddText(regular, size, {p.x + 6 * s, y + 2 * s}, U32(Muted), text);
     ImGui::Dummy({w, frameH});
 }
@@ -330,6 +396,17 @@ void ToggleRow(Toggle t, const feat::Snapshot& snap)
     ImGui::PopID();
 }
 
+// Values where 0 means "follow something else": shown as text below the slider's usable range.
+const char* ZeroLabel(Value v)
+{
+    switch (v) {
+    case feat::ViewmodelFov: return "Same as world FOV";
+    case feat::AdsFov: return "Game's own";
+    case feat::BhopCap: return "Unlimited";
+    default: return nullptr;
+    }
+}
+
 // Label, slider (value printed inside it), Reset.
 void SliderRow(Value v, const char* label, const char* fmt, const feat::Snapshot& snap, const char* help,
                const char* resetLabel = "Reset")
@@ -346,9 +423,10 @@ void SliderRow(Value v, const char* label, const char* fmt, const feat::Snapshot
     ImGui::SameLine(x0 + avail * 0.40f);
     resetLabel = T(resetLabel);
     ImGui::SetNextItemWidth(avail * 0.60f - ButtonWidth(resetLabel) - ImGui::GetStyle().ItemSpacing.x);
-    float lo = v == feat::Fov ? 50.f : info.min; // FOV: 0 = game default, below any usable value
+    const char* zero = ZeroLabel(v);
+    float lo = zero ? (v == feat::BhopCap ? 1.f : 30.f) : info.min; // 0 = follow / unlimited, below any usable value
     float val = feat::g_value[v];
-    const char* shown = v == feat::Fov && val < lo ? T("Game default") : fmt;
+    const char* shown = zero && val < lo ? T(zero) : fmt;
     if (ImGui::SliderFloat("##v", &val, lo, info.max, shown, ImGuiSliderFlags_AlwaysClamp)) feat::g_value[v] = val;
     if (ImGui::IsItemDeactivatedAfterEdit()) feat::Save();
     ImGui::SameLine();
@@ -378,7 +456,46 @@ float ControlColumn(const char* label, float avail, float x0)
     return avail * 0.60f;
 }
 
+// Never touches the scale: S() is used by everything still drawn in this frame, and an invalid scale there faulted the
+// overlay (which then turned itself off until the game restarted).
+void SetSkin(int i, bool save = true)
+{
+    g_skin = std::clamp(i, 0, theme::kSkinCount - 1);
+    theme::ApplySkin(g_skin, g_accent, g_highlight);
+    g_themeDirty = true;
+    if (!save) return;
+    cfg::SetString("Menu", "Skin", theme::kSkins[g_skin].name);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "#%06X", g_accent);
+    cfg::SetString("Menu", "Accent", buf);
+    snprintf(buf, sizeof(buf), "#%06X", g_highlight);
+    cfg::SetString("Menu", "Highlight", buf);
+}
+
 // ---------------------------------------------------------------- tabs
+
+// Speed units for the hop readout and the speedometer; speeds come in cm/s (1 Unreal unit = 1 cm).
+struct Unit {
+    const char* name; // menu
+    const char* suffix;
+    double perCmS;
+    const char* fmt;
+};
+const Unit kUnits[4] = {
+    {"km/h", "km/h", 0.036, "%.1f"},
+    {"mph", "mph", 0.0223694, "%.1f"},
+    {"Hammer units/s", "u/s", 1 / 2.54, "%.0f"},
+    {"Unreal units/s", "uu/s", 1.0, "%.0f"},
+};
+int SpeedUnit() { return std::clamp(int(feat::g_value[feat::SpeedUnit]), 0, 3); }
+std::string FormatSpeed(double cmPerS)
+{
+    const Unit& u = kUnits[SpeedUnit()];
+    char num[32], out[48];
+    snprintf(num, sizeof(num), u.fmt, cmPerS * u.perCmS);
+    snprintf(out, sizeof(out), "%s %s", num, u.suffix);
+    return out;
+}
 
 void TabPlayer(const feat::Snapshot& s)
 {
@@ -434,6 +551,8 @@ void TabCombat(const feat::Snapshot& s)
         ImGui::EndDisabled();
     }
     for (Toggle t : {feat::NoSufferingCost, feat::NoPowerCooldown}) ToggleRow(t, s);
+    Hint("This section shows what your save has. These two start off every time a save loads: turn them on here after "
+         "loading if you want them.");
     for (int p = 0; p < feat::PowerCount; p++) {
         ImGui::PushID(p);
         ImVec2 rowMin = ImGui::GetCursorScreenPos();
@@ -475,12 +594,68 @@ void TabCombat(const feat::Snapshot& s)
     }
 }
 
+void BindButton(const char* id, int target, unsigned key);
+
 void TabMovement(const feat::Snapshot& s)
 {
     Section("MOVEMENT");
-    for (Toggle t : {feat::Fly, feat::Noclip, feat::FreeCam, feat::PauseTime}) ToggleRow(t, s);
+    for (Toggle t : {feat::Fly, feat::Noclip, feat::FreeCam, feat::PauseTime, feat::UnlockPitch}) ToggleRow(t, s);
     SliderRow(feat::SpeedMult, "Speed", "x%.2f", s, "Movement speed multiplier (also flying and free camera speed).");
+
+    Section("JUMP");
+    ToggleRow(feat::Jump, s);
+    {
+        float avail = ImGui::GetContentRegionAvail().x, x0 = ImGui::GetCursorPosX();
+        ControlColumn("Jump key", avail, x0);
+        BindButton("jumpkey", kBindJump, jump::g_key);
+        ImGui::SameLine();
+        std::string clash = jump::Conflict();
+        bool space = jump::g_key == VK_SPACE;
+        if (space || !clash.empty()) { // Space is Evade by default; anything else the game binds is named from its mappings
+            char line[320];
+            if (space)
+                snprintf(line, sizeof(line), "%s", T("Space is the game's Evade key by default: rebind Evade in the game's "
+                                                    "Controls settings, or pick another jump key, or every jump also evades."));
+            else
+                snprintf(line, sizeof(line), T("%s is also the game's %s key: pressing it does both. Pick another jump key."),
+                         KeyName(jump::g_key).c_str(), clash.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, Pink);
+            ImGui::TextWrapped("%s", line);
+            ImGui::PopStyleColor();
+        }
+    }
     SliderRow(feat::JumpMult, "Jump height", "x%.1f", s, "Jump velocity multiplier.");
+    ToggleRow(feat::Bhop, s);
+    ImGui::BeginDisabled(!feat::g_on[feat::Bhop]);
+    ToggleRow(feat::BhopAuto, s);
+    SliderRow(feat::BhopGain, "Speed gain per hop", "+%.0f%%", s,
+              "Speed added by each chained hop. A perfectly timed hop (within 30 ms of landing) adds double.");
+    SliderRow(feat::BhopCap, "Max hop speed", "x%.1f", s, "Hop speed cap, as a multiple of your walking speed.", "Unlimited");
+    SliderRow(feat::BhopAirStrafe, "Air strafe", "%.0f", s,
+              "How quickly strafing while turning the mouse builds speed in the air. 0 turns air strafing off.");
+    ToggleRow(feat::BhopHud, s);
+    ImGui::EndDisabled();
+    ToggleRow(feat::Speedometer, s);
+    {
+        float av = ImGui::GetContentRegionAvail().x, xx = ImGui::GetCursorPosX();
+        ControlColumn("Speed unit", av, xx);
+        int unit = SpeedUnit();
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+        if (ImGui::BeginCombo("##speedunit", T(kUnits[unit].name))) {
+            for (int i = 0; i < 4; i++)
+                if (ImGui::Selectable(T(kUnits[i].name), i == unit)) {
+                    feat::g_value[feat::SpeedUnit] = float(i);
+                    feat::Save();
+                }
+            ImGui::EndCombo();
+        }
+    }
+    Hint("Unit for the hop readout and the speedometer. Hammer units are Source's (1 unit = 1 inch); Unreal units are cm.");
+    if (feat::g_on[feat::Bhop])
+        Hint(feat::g_on[feat::BhopAuto] ? "Hold the jump key: you hop on every landing."
+                                         : "Press jump as you land: up to 0.12 s early or 0.15 s late chains the hop, within "
+                                           "0.03 s of the landing it's perfect (double gain). Works in every direction, "
+                                           "backwards too. Hold strafe and turn the mouse the same way in the air to build speed.");
 
     Section("SAVED POSITIONS");
     for (int i = 0; i < 3; i++) {
@@ -613,12 +788,208 @@ void TabWorld(const feat::Snapshot& s)
     ImGui::BeginDisabled(!s.player);
     if (ImGui::Button(T("Kill enemies nearby"))) feat::KillNearby();
     ImGui::EndDisabled();
-    Section("CAMERA & HUD");
-    SliderRow(feat::Fov, "Field of view", "%.0f°", s, "Locks the camera field of view. Default gives control back to the game.",
-              "Default");
+    Section("HUD");
     ToggleRow(feat::HideHUD, s);
+    Section("PROMPTS");
+    ToggleRow(feat::SimplePrompts, s);
+    ImGui::BeginDisabled(!feat::g_on[feat::SimplePrompts]);
+    {
+        float av = ImGui::GetContentRegionAvail().x, xx = ImGui::GetCursorPosX();
+        ControlColumn("Key colour", av, xx);
+        static float col[3] = {-1, 0, 0};
+        if (col[0] < 0) {
+            std::string v = cfg::GetString("Prompts", "Color", "#FFFFFF");
+            unsigned rgb = v.size() == 7 && v[0] == '#' ? unsigned(strtoul(v.c_str() + 1, nullptr, 16)) : 0xFFFFFF;
+            col[0] = ((rgb >> 16) & 255) / 255.f, col[1] = ((rgb >> 8) & 255) / 255.f, col[2] = (rgb & 255) / 255.f;
+        }
+        if (ImGui::ColorEdit3("##promptcol", col, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoAlpha)) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "#%06X", theme::ToHex({col[0], col[1], col[2], 1}));
+            cfg::SetString("Prompts", "Color", buf);
+        }
+    }
+    SliderRow(feat::PromptSize, "Key size", "%.0f", s, "Font size of the key.");
+    ToggleRow(feat::PromptBrackets, s);
+    ImGui::EndDisabled();
     Section("LOCKS");
     ToggleRow(feat::AutoLockpick, s);
+}
+
+// FOV editor (fov.cpp), ported from TrueFOV.
+void TabFov(const feat::Snapshot& s)
+{
+    fov::Status st = fov::GetStatus();
+    Section("FIELD OF VIEW");
+    ToggleRow(feat::CustomFov, s);
+    SliderRow(feat::WorldFov, "World FOV", "%.0f°", s,
+              "Field of view of the world during gameplay, on the game's own camera scale. Cutscenes and other cameras "
+              "keep the game's FOV.");
+    SliderRow(feat::ViewmodelFov, "Viewmodel FOV", "%.0f°", s,
+              "Field of view of your arms and held items. Default keeps them in step with the world FOV, the way the game "
+              "does, so your hands line up with the world in first-person scenes. While aiming they follow the camera so "
+              "the sights stay lined up.",
+              "Default");
+    SliderRow(feat::AdsFov, "Aiming FOV", "%.0f°", s,
+              "Field of view while aiming down sights. Default uses the game's own aiming FOV, whatever your world FOV is.",
+              "Default");
+
+    Section("BEHAVIOUR");
+    ToggleRow(feat::FovKeepEffects, s);
+    SliderRow(feat::FovBlend, "Transition", "%.2f s", s,
+              "Blend time between your FOV and the game's when gameplay starts or stops, from instant up to 2 seconds.");
+
+    Section("HOTKEYS");
+    {
+        float avail = ImGui::GetContentRegionAvail().x, x0 = ImGui::GetCursorPosX();
+        ControlColumn("World FOV + / -", avail, x0);
+        BindButton("fovup", kBindFovUp, g_fovUp);
+        ImGui::SameLine();
+        BindButton("fovdown", kBindFovDown, g_fovDown);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", T("Shift: 5° steps"));
+    }
+    if (int key = g_hotkey[feat::CustomFov]) {
+        char line[160];
+        snprintf(line, sizeof(line), T("%s turns the FOV editor on and off (change it in Settings, Hotkeys)."),
+                 KeyName(unsigned(key)).c_str());
+        Hint(line);
+    } else {
+        Hint("Bind a key in Settings, Hotkeys to turn the FOV editor on and off.");
+    }
+
+    Section("STATUS");
+    char line[256];
+    if (!st.error.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, Pink);
+        ImGui::TextWrapped("%s %s", T("FOV editor unavailable:"), st.error.c_str());
+        ImGui::PopStyleColor();
+    } else if (!st.resolved) {
+        ImGui::TextDisabled("%s", T(s.reflection ? "Looking for the camera..." : "Game engine not hooked: see KetaminePlusPlus.log."));
+    } else if (!st.player) {
+        ImGui::TextDisabled("%s", T("Load a save to see the camera."));
+    } else {
+        snprintf(line, sizeof(line), "%s %s  ·  %s %s%s", T("Camera shows:"), T(st.shown.c_str()), T("hook"),
+                 T(st.cameraHooked ? "on" : "off"), st.aiming ? T("  ·  aiming") : "");
+        ImGui::TextUnformatted(line);
+        snprintf(line, sizeof(line), "%s %.1f° → %.1f°", T("World:"), st.in, st.out);
+        ImGui::TextUnformatted(line);
+        if (st.viewmodelOut > 0) {
+            snprintf(line, sizeof(line), "%s %.1f° → %.1f°", T("Viewmodel:"), st.viewmodelIn, st.viewmodelOut);
+            ImGui::TextUnformatted(line);
+        }
+        std::string game = std::string(T("Game's FOV:")) + " ";
+        char buf[32];
+        snprintf(buf, sizeof(buf), st.gameBase > 0 ? "%.0f°" : "-", st.gameBase);
+        game += buf;
+        game += std::string("  ·  ") + T("game's aiming FOV:") + " ";
+        snprintf(buf, sizeof(buf), st.gameAimFov > 0 ? "%.0f°" : "-", st.gameAimFov);
+        game += buf;
+        ImGui::TextDisabled("%s", game.c_str());
+        if (!st.hookAvailable) ImGui::TextDisabled("%s", T("ApplyCameraModifiers not found: the FOV can't be changed."));
+    }
+    if (st.lockedFov > 0) {
+        snprintf(line, sizeof(line), T("The console 'fov %.0f' command overrides every camera."), st.lockedFov);
+        ImGui::PushStyleColor(ImGuiCol_Text, Pink);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(line);
+        ImGui::PopStyleColor();
+        SameLineRight(ButtonWidth(T("Clear")));
+        if (ImGui::Button(T("Clear"))) fov::ClearLockedFov();
+    }
+}
+
+// Minimap (minimap.cpp), ported from True Minimap (Nexus Mods 39) with its performance problems fixed.
+void TabMinimap(const feat::Snapshot& s)
+{
+    Section("MINIMAP");
+    ToggleRow(feat::Minimap, s);
+    ImGui::BeginDisabled(!feat::g_on[feat::Minimap]);
+    {
+        float av = ImGui::GetContentRegionAvail().x, xx = ImGui::GetCursorPosX();
+        ControlColumn("Shape", av, xx);
+        int shape = std::clamp(int(feat::g_value[feat::MinimapShape]), 0, minimap::ShapeCount - 1);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+        if (ImGui::BeginCombo("##shape", T(minimap::kShapeNames[shape]))) {
+            for (int i = 0; i < minimap::ShapeCount; i++)
+                if (ImGui::Selectable(T(minimap::kShapeNames[i]), i == shape)) {
+                    feat::g_value[feat::MinimapShape] = float(i);
+                    feat::Save();
+                }
+            ImGui::EndCombo();
+        }
+    }
+    ToggleRow(feat::MinimapRotate, s);
+    SliderRow(feat::MinimapSize, "Size", "%.0f px", s, "Side of the minimap, in UI pixels.");
+    SliderRow(feat::MinimapZoom, "Zoom", "x%.1f", s, "Higher shows less of the map, larger.");
+    SliderRow(feat::MinimapOpacity, "Transparency", "%.0f%%", s, "How see-through the map is.");
+    Section("PLACEMENT");
+    ToggleRow(feat::MinimapScreenEdge, s);
+    SliderRow(feat::MinimapOffsetX, "Offset X", "%.0f", s, "Moves the minimap left (negative) or right.");
+    SliderRow(feat::MinimapOffsetY, "Offset Y", "%.0f", s, "Moves the minimap up (negative) or down.");
+    ToggleRow(feat::MinimapFrame, s);
+    ToggleRow(feat::MinimapAlways, s);
+    ImGui::EndDisabled();
+    Section("STATUS");
+    ImGui::TextDisabled("%s", T(minimap::Status()));
+    Hint("Ported from True Minimap by Thidrec (Nexus Mods 39), rebuilt to avoid its stutter: no object scans 36 times a second, no "
+         "forced map rebuild every 5 s, and the map moves without re-laying it out. Remove the UE4SS version if you use this.");
+}
+
+// Game fixes (fixes.cpp), ported from the UE4SS mods 42-46 on Nexus Mods: no UE4SS needed.
+void TabFixes(const feat::Snapshot& s)
+{
+    { // advisory card: these patch the game's own bugs, which an update may fix
+        float sc = S(), w = ImGui::GetContentRegionAvail().x;
+        const char* note = T("These fix problems in the game itself. A future game update may fix them too: if one starts "
+                             "behaving oddly after an update, turn it off, the game may not need it anymore.");
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImVec2 size = ImGui::CalcTextSize(note, nullptr, false, w - 30 * sc);
+        ImVec2 b{p.x + w, p.y + size.y + 20 * sc};
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(p, b, U32(Alpha(Violet, 0.12f)), R(8 * sc));
+        dl->AddRectFilled(p, {p.x + 3 * sc, b.y}, U32(Violet), R(8 * sc), ImDrawFlags_RoundCornersLeft);
+        ImGui::SetCursorScreenPos({p.x + 16 * sc, p.y + 10 * sc});
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w - 30 * sc);
+        ImGui::TextUnformatted(note);
+        ImGui::PopTextWrapPos();
+        ImGui::SetCursorScreenPos({p.x, b.y + 6 * sc});
+        ImGui::Dummy({0, 0});
+    }
+    Section("CONTROLS");
+    ToggleRow(feat::FixToolInput, s);
+    ToggleRow(feat::KeypadFix, s);
+    Section("INTERACTIONS");
+    ToggleRow(feat::QuickInteract, s);
+    ImGui::BeginDisabled(!feat::g_on[feat::QuickInteract]);
+    SliderRow(feat::InteractHold, "Hold time", "%.2f s", s,
+              "How long a pickup or ladder hold takes once it starts (the game's is about 1 s). Never made slower.");
+    SliderRow(feat::LadderSpeed, "Ladder climb speed", "x%.1f", s, "Speed of the ladder animations (getting on, climbing, off).");
+    ImGui::EndDisabled();
+    ToggleRow(feat::SpeedUp, s);
+    ImGui::BeginDisabled(!feat::g_on[feat::SpeedUp]);
+    const char* off = "1 turns this one off.";
+    SliderRow(feat::SaveSpeed, "Save point", "x%.1f", s, off);
+    SliderRow(feat::ConfigSpeed, "Lament Configuration puzzle", "x%.1f", s, off);
+    SliderRow(feat::PillarSpeed, "Reward pillars", "x%.1f", s, off);
+    SliderRow(feat::CylinderSpeed, "Cylinder puzzles", "x%.1f", s, off);
+    SliderRow(feat::CylinderInputSpeed, "Cylinder puzzle input", "x%.1f", s, "Shorter lockout after each turn. 1 turns this one off.");
+    SliderRow(feat::BoatSpeed, "Dock boat (episode 3)", "x%.1f", s, off);
+    ImGui::EndDisabled();
+    if (feat::g_on[feat::SpeedUp] && s.reflection && !fixes::EditsAvailable())
+        Hint("This game build's script tables weren't found (see the log), so the save point and Lament puzzle stay at "
+             "normal speed: only their animations could be sped up, which would put them out of step. The others work.");
+    Section("HUD");
+    ToggleRow(feat::HudAutoHide, s);
+    ImGui::BeginDisabled(!feat::g_on[feat::HudAutoHide]);
+    SliderRow(feat::HudIdleDelay, "Idle delay", "%.0f s", s, "How long most of the HUD must stay faded before the rest fades.");
+    ImGui::EndDisabled();
+    Section("CUTSCENES");
+    ToggleRow(feat::CutsceneSkip, s);
+    Hint("Unskippable cutscenes are left alone. Skipping uses the game's own skip, so story progress and rewards are "
+         "the same as skipping by hand.");
+    ImGui::Dummy({0, 6 * S()});
+    Hint("Ported from uwumatic101's UE4SS mods ToolInputFix, KeypadInputFix, SpeedUpInteractions, QuickInteract and "
+         "CutsceneAutoSkip (Nexus Mods 42-46). Remove those mods from ue4ss\\Mods if you use these, so they don't run twice.");
 }
 
 void TabProgress(const feat::Snapshot& s)
@@ -630,8 +1001,8 @@ void TabProgress(const feat::Snapshot& s)
         ImVec2 size = ImGui::CalcTextSize(warn, nullptr, false, w - 30 * sc);
         ImVec2 b{p.x + w, p.y + size.y + 20 * sc};
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(p, b, U32(Alpha(Violet, 0.12f)), 8 * sc);
-        dl->AddRectFilled(p, {p.x + 3 * sc, b.y}, U32(Violet), 8 * sc, ImDrawFlags_RoundCornersLeft);
+        dl->AddRectFilled(p, b, U32(Alpha(Violet, 0.12f)), R(8 * sc));
+        dl->AddRectFilled(p, {p.x + 3 * sc, b.y}, U32(Violet), R(8 * sc), ImDrawFlags_RoundCornersLeft);
         ImGui::SetCursorScreenPos({p.x + 16 * sc, p.y + 10 * sc});
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w - 30 * sc);
         ImGui::TextUnformatted(warn);
@@ -731,8 +1102,58 @@ void TabSettings(const feat::Snapshot& s)
     if (ImGui::Button(T("Auto"))) setScale(0);
     ImGui::EndDisabled();
 
+    Section("SKIN");
+    {
+        float av = ImGui::GetContentRegionAvail().x, xx = ImGui::GetCursorPosX();
+        ControlColumn("Skin", av, xx);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+        if (ImGui::BeginCombo("##skin", theme::kSkins[g_skin].name)) {
+            for (int i = 0; i < theme::kSkinCount; i++) {
+                ImVec4 sw = theme::Hex(i == theme::kCustomSkin ? g_accent : theme::kSkins[i].accent);
+                ImGui::ColorButton(("##sw" + std::to_string(i)).c_str(), sw, ImGuiColorEditFlags_NoTooltip,
+                                   {ImGui::GetFontSize(), ImGui::GetFontSize()});
+                ImGui::SameLine();
+                if (ImGui::Selectable(theme::kSkins[i].name, i == g_skin)) SetSkin(i);
+            }
+            ImGui::EndCombo();
+        }
+        // Test hosts: KM_TEST_SKIN changes the skin every 60 frames right here, mid-window, as picking one does.
+        static const bool testSkin = GetEnvironmentVariableA("KM_TEST_SKIN", nullptr, 0) != 0;
+        if (testSkin && ImGui::GetFrameCount() % 60 == 0) {
+            SetSkin((g_skin + 1) % theme::kSkinCount);
+            km::Log("Test: skin -> %s", theme::kSkins[g_skin].name);
+        }
+        ControlColumn("Accent / highlight", av, xx);
+        float acc[3] = {Violet.x, Violet.y, Violet.z}, hi[3] = {Pink.x, Pink.y, Pink.z};
+        const ImGuiColorEditFlags flags = ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoAlpha;
+        bool edited = ImGui::ColorEdit3("##accent", acc, flags);
+        ImGui::SameLine();
+        edited |= ImGui::ColorEdit3("##highlight", hi, flags);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", T("Editing switches to Custom"));
+        static bool picking = false; // live while dragging in the picker, saved once when it stops
+        if (edited) {
+            g_accent = theme::ToHex({acc[0], acc[1], acc[2], 1});
+            g_highlight = theme::ToHex({hi[0], hi[1], hi[2], 1});
+            SetSkin(theme::kCustomSkin, false);
+            picking = true;
+        } else if (picking) {
+            picking = false;
+            SetSkin(theme::kCustomSkin);
+        }
+        ControlColumn("Window opacity", av, xx);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12);
+        float op = theme::Opacity;
+        if (ImGui::SliderFloat("##opacity", &op, 0.6f, 1.f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+            theme::Opacity = op;
+            g_themeDirty = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) cfg::SetFloat("Menu", "Opacity", theme::Opacity);
+    }
+
     Section("GAME");
     ToggleRow(feat::SkipIntros, s);
+    ToggleRow(feat::PauseMenuEntry, s);
 
     Section("HOTKEYS");
     Hint("They work with the menu closed. Click a key, then press the new one. Backspace clears, Esc cancels.");
@@ -751,10 +1172,39 @@ void TabSettings(const feat::Snapshot& s)
         ImGui::EndTable();
     }
 
+    Section("CREDITS");
+    {
+        static const char* kCredits[][2] = {
+            {"rams95", "KETAMINE++: bundled it all together, with the added features (github.com/rams95blue)"},
+            {"omxga (literalynn)", "Ketamine Menu, the trainer KETAMINE++ is built on"},
+            {"Reynbow", "TrueFOV, the FOV editor"},
+            {"uwumatic101", "ToolInputFix, KeypadInputFix, SpeedUpInteractions, QuickInteract, CutsceneAutoSkip"},
+            {"Thidrec", "Hellraiser True Minimap"},
+            {"Omar Cornut", "Dear ImGui"},
+            {"Tsuda Kageyu", "MinHook"},
+            {"Rasmus Andersson", "Inter font"},
+        };
+        for (auto& c : kCredits) {
+            ImGui::PushFont(bold, 0);
+            ImGui::TextColored(Violet, "%s", c[0]);
+            ImGui::PopFont();
+            ImGui::SameLine(ImGui::GetFontSize() * 11);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("%s", c[1]);
+            ImGui::PopTextWrapPos();
+        }
+        Hint("Full notices and links: THIRD-PARTY-NOTICES.txt and KETAMINE++.md, next to the DLL.");
+    }
+
+    Section("DIAGNOSTICS");
+    if (ImGui::Button(T("Dump on-screen UI to the log"))) fixes::DumpUi();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", T("Lists every widget on screen: send the log to help add UI features."));
+
     Section("CONFIGURATION");
     if (ImGui::Button(T("Reset configuration"))) ImGui::OpenPopup("###reset");
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", T("KetamineMenu.ini and KetamineMenu.log sit next to the DLL."));
+    ImGui::TextDisabled("%s", T("KetaminePlusPlus.ini and KetaminePlusPlus.log sit next to the DLL."));
     if (ImGui::BeginPopupModal((std::string(T("Reset?")) + "###reset").c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted(T("Turn every option off and forget hotkeys, positions and settings?"));
         if (ImGui::Button(T("Reset"))) {
@@ -762,10 +1212,15 @@ void TabSettings(const feat::Snapshot& s)
             cfg::SetString("Menu", "Language", lang::kLangs[lang::Get()].code); // keep the language the menu shows
             for (int t = 0; t < feat::ToggleCount; t++) feat::g_on[t] = feat::kToggles[t].def;
             for (int v = 0; v < feat::ValueCount; v++) feat::g_value[v] = feat::kValues[v].def;
-            for (auto& k : g_hotkey) k = 0;
-            g_menuKey = VK_INSERT;
+            for (int t = 0; t < feat::ToggleCount; t++) g_hotkey[t] = DefaultHotkey(t);
+            g_fovUp = VK_PRIOR;
+            g_fovDown = VK_NEXT;
+            jump::g_key = VK_SPACE;
+            g_menuKey = VK_F1;
             g_menuKey2 = VK_F8;
-            g_scale = 0;
+            g_scale = 1.f;
+            g_accent = 0x1EF8FF, g_highlight = 0xECECEC, theme::Opacity = 1.f;
+            SetSkin(DefaultSkin());
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
@@ -775,6 +1230,108 @@ void TabSettings(const feat::Snapshot& s)
 }
 
 // ---------------------------------------------------------------- frame
+
+// The mouse cursor while the menu is open, drawn on top of everything, in the skin's look: the Windows 9x arrow
+// (pixel art) for retro skins, the same arrow in the accent colour for terminal skins, a smooth arrow otherwise.
+void DrawCursor()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    if (!g_open || !ImGui::IsMousePosValid()) return;
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImVec2 m = io.MousePos;
+    float s = std::max(1.f, S());
+    if (Style == StyleModern) {
+        const ImVec2 shape[] = {{0, 0}, {0, 17}, {4.2f, 13.2f}, {7.2f, 20}, {10, 18.8f}, {7.1f, 12.3f}, {12.4f, 12.3f}};
+        ImVec2 pts[7];
+        for (int i = 0; i < 7; i++) pts[i] = {m.x + shape[i].x * s, m.y + shape[i].y * s};
+        dl->AddConcavePolyFilled(pts, 7, Raw(Text));
+        dl->AddPolyline(pts, 7, Raw(Alpha(Bg, 0.9f)), ImDrawFlags_Closed, 1.3f * s);
+        dl->AddCircleFilled({m.x + 3.2f * s, m.y + 9 * s}, 1.6f * s, Raw(Violet), 10);
+        return;
+    }
+    static const char* kArrow[] = {
+        "B",          "BB",          "BWB",         "BWWB",         "BWWWB",      "BWWWWB",      "BWWWWWB",
+        "BWWWWWWB",   "BWWWWWWWB",   "BWWWWWWWWB",  "BWWWWWBBBBB",  "BWWBWWB",    "BWB BWWB",    "BB  BWWB",
+        "B    BWWB",  "     BWWB",   "      BWWB",  "      BWWB",   "       BB",
+    };
+    float px = std::round(1.5f * s); // chunky pixels
+    ImU32 outline = Style == StyleRetro ? IM_COL32(0, 0, 0, 255) : Raw(Violet);
+    ImU32 fill = Style == StyleRetro ? IM_COL32(255, 255, 255, 255) : Raw(Bg);
+    float x0 = std::floor(m.x), y0 = std::floor(m.y);
+    for (int r = 0; r < int(sizeof(kArrow) / sizeof(kArrow[0])); r++)
+        for (int c = 0; kArrow[r][c]; c++) {
+            char ch = kArrow[r][c];
+            if (ch == ' ') continue;
+            ImVec2 a{x0 + c * px, y0 + r * px};
+            dl->AddRectFilled(a, {a.x + px, a.y + px}, ch == 'B' ? outline : fill);
+        }
+}
+
+// The minimap's frame: an outline of its shape in the skin's accent, with a dark edge, drawn over the game.
+void DrawMinimapFrame()
+{
+    float x, y, size;
+    int shape;
+    if (!minimap::FrameRect(x, y, size, shape)) return;
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    float s = S(), cx = x + size * 0.5f, cy = y + size * 0.5f, half = size * 0.5f;
+    std::vector<ImVec2> pts;
+    auto ring = [&](int n, float start, float radius) {
+        for (int i = 0; i < n; i++) {
+            float a = start + float(i) * 6.2831853f / float(n);
+            pts.push_back({cx + std::cos(a) * radius, cy + std::sin(a) * radius});
+        }
+    };
+    switch (shape) {
+    case minimap::Circle: ring(64, 0, half); break;
+    case minimap::Octagon: ring(8, 3.14159265f / 8, half / std::cos(3.14159265f / 8)); break; // flat top, apothem = half
+    case minimap::Diamond: ring(4, 0, half); break;
+    default: pts = {{x, y}, {x + size, y}, {x + size, y + size}, {x, y + size}}; break;
+    }
+    dl->AddPolyline(pts.data(), int(pts.size()), Raw(Alpha(Black, 0.6f)), ImDrawFlags_Closed, 5 * s);
+    dl->AddPolyline(pts.data(), int(pts.size()), Raw(Violet), ImDrawFlags_Closed, 2.2f * s);
+}
+
+// Under the crosshair, below the hop readout: the live horizontal speed.
+void DrawSpeedometer()
+{
+    bool valid = false;
+    double v = jump::LiveSpeed(&valid);
+    if (!feat::g_on[feat::Speedometer] || !valid) return;
+    float s = S(), size = kBaseFont * 0.95f * s;
+    std::string text = FormatSpeed(v);
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImVec2 ts = bold->CalcTextSizeA(size, FLT_MAX, 0, text.c_str());
+    ImVec2 p{ImGui::GetIO().DisplaySize.x * 0.5f - ts.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f + 120 * s};
+    dl->AddText(bold, size, {p.x + 1 * s, p.y + 1 * s}, Raw(Alpha(Black, 0.7f)), text.c_str());
+    dl->AddText(bold, size, p, Raw(Alpha(Text, 0.92f)), text.c_str());
+}
+
+// Below the crosshair, fading out 1.4 s after each hop.
+void DrawHopHud()
+{
+    if (!feat::g_on[feat::Jump] || !feat::g_on[feat::Bhop] || !feat::g_on[feat::BhopHud]) return;
+    jump::HudInfo h = jump::Hud();
+    double age = PreciseNow() - h.at;
+    if (!h.grade[0] || age < 0 || age > 1.4) return;
+    float a = float(std::clamp((1.4 - age) / 0.4, 0.0, 1.0)), s = S();
+    char top[64], bottom[64];
+    bool late = h.grade[0] == 'L';
+    if (late) snprintf(top, sizeof(top), "%s", T("LATE"));
+    else snprintf(top, sizeof(top), "%s  +%d%%", T(h.grade), h.gain);
+    snprintf(bottom, sizeof(bottom), T("hop %d  ·  %s"), h.hops, FormatSpeed(h.speed).c_str());
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImVec2 c{ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f + 60 * s};
+    float big = kBaseFont * 1.1f * s, small = kBaseFont * 0.8f * s;
+    ImVec2 ts = bold->CalcTextSizeA(big, FLT_MAX, 0, top), bs = regular->CalcTextSizeA(small, FLT_MAX, 0, bottom);
+    ImVec4 col = late ? Muted : h.grade[0] == 'P' ? Pink : Violet;
+    auto shadow = [&](ImFont* f, float size, ImVec2 p, ImVec4 c4, const char* t) {
+        dl->AddText(f, size, {p.x + 1 * s, p.y + 1 * s}, Raw(Alpha(Black, 0.7f * a)), t);
+        dl->AddText(f, size, p, Raw(Alpha(c4, a)), t);
+    };
+    shadow(bold, big, {c.x - ts.x * 0.5f, c.y}, col, top);
+    shadow(regular, small, {c.x - bs.x * 0.5f, c.y + ts.y + 2 * s}, Text, bottom);
+}
 
 void DrawToasts()
 {
@@ -790,9 +1347,9 @@ void DrawToasts()
         ImVec2 ts = regular->CalcTextSizeA(size, FLT_MAX, 0, t.text.c_str()), ss = bold->CalcTextSizeA(size, FLT_MAX, 0, state);
         float w = pad * 2 + 4 * s + ts.x + (t.state < 0 ? 0 : ss.x + 12 * s), h = ts.y + pad * 1.4f;
         ImVec2 a{right - w, y}, b{right, y + h};
-        dl->AddRectFilled(a, b, Raw(Alpha(Panel, 0.97f * alpha)), 8 * s);
-        dl->AddRect(a, b, Raw(Alpha(Border, alpha)), 8 * s);
-        dl->AddRectFilled(a, {a.x + 4 * s, b.y}, Raw(Alpha(Violet, alpha)), 8 * s, ImDrawFlags_RoundCornersLeft);
+        dl->AddRectFilled(a, b, Raw(Alpha(Panel, 0.97f * alpha)), R(8 * s));
+        dl->AddRect(a, b, Raw(Alpha(Border, alpha)), R(8 * s));
+        dl->AddRectFilled(a, {a.x + 4 * s, b.y}, Raw(Alpha(Violet, alpha)), R(8 * s), ImDrawFlags_RoundCornersLeft);
         ImVec2 tp{a.x + pad + 4 * s, a.y + (h - ts.y) * 0.5f};
         dl->AddText(regular, size, tp, Raw(Alpha(Text, alpha)), t.text.c_str());
         if (t.state >= 0)
@@ -807,19 +1364,56 @@ void Header(const feat::Snapshot& snap)
     ImVec2 p = ImGui::GetCursorScreenPos();
     float avail = ImGui::GetContentRegionAvail().x;
     ImGui::PushFont(bold, kBaseFont * 1.45f);
-    ImGui::TextUnformatted("Hellraiser Revival's Ketamine Menu");
+    if (Style == StyleRetro) { // a Windows 98 title bar: accent to highlight gradient, white title
+        ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
+        float th = ImGui::GetTextLineHeight();
+        ImVec2 a{wp.x + 4 * s, wp.y + 4 * s}, b{wp.x + ws.x - 4 * s, p.y + th + 4 * s};
+        ImGui::GetWindowDrawList()->AddRectFilledMultiColor(a, b, Raw(Violet), Raw(Pink), Raw(Pink), Raw(Violet));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1, 1, 1, 1});
+        ImGui::TextUnformatted("KETAMINE++");
+        ImGui::PopStyleColor();
+        ImGui::Dummy({0, 4 * s});
+    } else if (Style == StyleTerminal) { // a shell prompt with a blinking cursor
+        bool on = std::fmod(ImGui::GetTime(), 1.0) < 0.55;
+        ImGui::PushStyleColor(ImGuiCol_Text, Violet);
+        ImGui::Text("root@ketamine:~# KETAMINE++%s", on ? "_" : " ");
+        ImGui::PopStyleColor();
+    } else {
+        ImGui::TextUnformatted("KETAMINE++");
+    }
     ImGui::PopFont();
-    ImGui::TextDisabled("v%s  ·  %s", KM_VERSION, overlay::ApiName());
+    ImGui::TextDisabled("v%s  ·  %s  ·  Hellraiser: Revival  ·  bundled by rams95", KM_VERSION, overlay::ApiName());
 
     // Status pill on the right of the title.
     const char* status = T(!snap.reflection ? "Engine not hooked" : snap.player ? "Player found" : "Load a save");
     float size = kBaseFont * 0.85f * s;
     ImVec2 ts = regular->CalcTextSizeA(size, FLT_MAX, 0, status);
     float h = ts.y + 12 * s, w = ts.x + 30 * s;
-    ImVec2 a{p.x + avail - w, p.y + 4 * s}, b{a.x + w, a.y + h};
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(a, b, Raw(Panel), h * 0.5f);
-    dl->AddRect(a, b, Raw(Border), h * 0.5f);
+    // Close button, top right: X.
+    {
+        ImVec2 cmin{p.x + avail - h, p.y + 4 * s}, cmax{cmin.x + h, cmin.y + h};
+        ImVec2 back = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(cmin);
+        if (ImGui::InvisibleButton("##close", {h, h})) {
+            g_open = false;
+            km::Log("Menu closed (X)");
+        }
+        bool hov = ImGui::IsItemHovered();
+        if (hov) ImGui::SetTooltip("%s", T("Close"));
+        ImGui::SetCursorScreenPos(back);
+        dl->AddRectFilled(cmin, cmax, Raw(hov ? Alpha(Pink, 0.85f) : Panel), R(h * 0.5f));
+        dl->AddRect(cmin, cmax, Raw(Border), R(h * 0.5f));
+        float k = h * 0.28f;
+        ImVec2 c{(cmin.x + cmax.x) * 0.5f, (cmin.y + cmax.y) * 0.5f};
+        ImU32 xc = Raw(hov ? Bg : Text);
+        dl->AddLine({c.x - k, c.y - k}, {c.x + k, c.y + k}, xc, 1.8f * s);
+        dl->AddLine({c.x - k, c.y + k}, {c.x + k, c.y - k}, xc, 1.8f * s);
+        avail -= h + 8 * s;
+    }
+    ImVec2 a{p.x + avail - w, p.y + 4 * s}, b{a.x + w, a.y + h};
+    dl->AddRectFilled(a, b, Raw(Panel), R(h * 0.5f));
+    dl->AddRect(a, b, Raw(Border), R(h * 0.5f));
     ImVec4 dot = !snap.reflection ? Muted : snap.player ? Violet : Pink;
     dl->AddCircleFilled({a.x + 13 * s, a.y + h * 0.5f}, 3.5f * s, Raw(dot), 12);
     dl->AddText(regular, size, {a.x + 22 * s, a.y + 6 * s}, Raw(Text), status);
@@ -841,8 +1435,8 @@ void Sidebar()
         bool active = g_tab == i, hovered = ImGui::IsItemHovered();
         ImDrawList* dl = ImGui::GetWindowDrawList();
         if (active || hovered)
-            dl->AddRectFilled(p, {p.x + w, p.y + h}, Raw(active ? Alpha(Violet, 0.16f) : Panel2), 7 * s);
-        if (active) dl->AddRectFilled({p.x, p.y + h * 0.25f}, {p.x + 3 * s, p.y + h * 0.75f}, Raw(Violet), 2 * s);
+            dl->AddRectFilled(p, {p.x + w, p.y + h}, Raw(active ? Alpha(Violet, 0.16f) : Panel2), R(7 * s));
+        if (active) dl->AddRectFilled({p.x, p.y + h * 0.25f}, {p.x + 3 * s, p.y + h * 0.75f}, Raw(Violet), R(2 * s));
         const char* name = T(kTabs[i]);
         ImVec2 ts = ImGui::CalcTextSize(name);
         dl->AddText(active ? bold : regular, kBaseFont * s, {p.x + 14 * s, p.y + (h - ts.y) * 0.5f}, Raw(active ? Text : Muted), name);
@@ -895,7 +1489,7 @@ void DrawWindow()
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowSize({880 * s, 620 * s}, ImGuiCond_Always);
     ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});
-    ImGui::Begin("Ketamine Menu", nullptr,
+    ImGui::Begin("KETAMINE++", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings);
     Header(snap);
@@ -905,6 +1499,11 @@ void DrawWindow()
     ImGui::SameLine(0, 14 * s);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {2 * s, 0}); // keeps switches clear of the scrollbar
     ImGui::BeginChild("##content", {0, 0}, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground);
+    { // test host: KM_TEST_SCROLL=<fraction 0..1> scrolls the tab (screenshots of long tabs)
+        static char env[16] = {};
+        static const bool test = GetEnvironmentVariableA("KM_TEST_SCROLL", env, sizeof(env)) != 0;
+        if (test) ImGui::SetScrollY(ImGui::GetScrollMaxY() * std::clamp(float(atof(env)), 0.f, 1.f));
+    }
     ImGui::PopStyleVar();
     switch (g_tab) {
     case 0: TabPlayer(snap); break;
@@ -913,7 +1512,10 @@ void DrawWindow()
     case 3: TabEsp(snap); break;
     case 4: TabInventory(snap); break;
     case 5: TabWorld(snap); break;
-    case 6: TabProgress(snap); break;
+    case 6: TabFov(snap); break;
+    case 7: TabMinimap(snap); break;
+    case 8: TabFixes(snap); break;
+    case 9: TabProgress(snap); break;
     default: TabSettings(snap); break;
     }
     ImGui::Dummy({0, 6 * s});
@@ -930,19 +1532,48 @@ void Init(void* dllModule, const std::string& gameVersion)
     g_module = static_cast<HMODULE>(dllModule);
     g_game = gameVersion.substr(0, gameVersion.find('_')); // "1.0.1.227219_HellraiserGame_Shipping..."
     if (g_game.empty() && GetEnvironmentVariableA("KM_PREVIEW", nullptr, 0)) g_game = "1.1.1.227384"; // test host
-    g_menuKey = unsigned(cfg::GetInt("Menu", "Key", VK_INSERT));
+    g_menuKey = unsigned(cfg::GetInt("Menu", "Key", VK_F1));
     g_menuKey2 = unsigned(cfg::GetInt("Menu", "Key2", VK_F8));
     int language = lang::FromCode(cfg::GetString("Menu", "Language").c_str());
     lang::Set(language >= 0 ? language : lang::FromSystem()); // first run: the Windows display language
-    g_scale = cfg::GetFloat("Menu", "Scale", 0);
+    g_scale = cfg::GetFloat("Menu", "Scale", 1.f);
     if (g_scale > 0) g_scale = std::clamp(g_scale, 0.7f, 2.5f);
     g_tab = std::clamp(cfg::GetInt("Menu", "Tab", 0), 0, kTabCount - 1);
+    {
+        std::string skin = cfg::GetString("Menu", "Skin", "Win95");
+        for (int i = 0; i < theme::kSkinCount; i++)
+            if (_stricmp(skin.c_str(), theme::kSkins[i].name) == 0) g_skin = i;
+        auto hex = [](const std::string& v, unsigned def) {
+            return v.size() == 7 && v[0] == '#' ? unsigned(strtoul(v.c_str() + 1, nullptr, 16)) : def;
+        };
+        g_accent = hex(cfg::GetString("Menu", "Accent"), g_accent);
+        g_highlight = hex(cfg::GetString("Menu", "Highlight"), g_highlight);
+        theme::Opacity = std::clamp(cfg::GetFloat("Menu", "Opacity", 1.f), 0.6f, 1.f);
+        theme::ApplySkin(g_skin, g_accent, g_highlight);
+    }
     for (int t = 0; t < feat::ToggleCount; t++) {
-        g_hotkey[t] = cfg::GetInt("Hotkeys", feat::kToggles[t].key, 0);
+        g_hotkey[t] = cfg::GetInt("Hotkeys", feat::kToggles[t].key, DefaultHotkey(t));
         if (g_hotkey[t] == int(g_menuKey2)) g_menuKey2 = 0; // F8 already bound to a cheat before 0.4.8: the cheat keeps it
     }
+    jump::g_key = unsigned(cfg::GetInt("Hotkeys", "JumpKey", VK_SPACE));
+    g_fovUp = unsigned(cfg::GetInt("Hotkeys", "FovUp", VK_PRIOR));
+    g_fovDown = unsigned(cfg::GetInt("Hotkeys", "FovDown", VK_NEXT));
     ReadHardware();
     feat::Init();
+}
+
+// A Windows font, the first of the files that exists (the retro and terminal skins use the fonts Windows ships).
+ImFont* SystemFont(std::initializer_list<const wchar_t*> files)
+{
+    for (const wchar_t* f : files) {
+        int size = 0;
+        void* data = MapFont(f, size);
+        if (!data) continue;
+        ImFontConfig cfg;
+        cfg.FontDataOwnedByAtlas = false; // the mapped view stays for the process lifetime
+        if (ImFont* font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(data, size, kBaseFont, &cfg)) return font;
+    }
+    return nullptr;
 }
 
 void SetupImGui()
@@ -955,26 +1586,82 @@ void SetupImGui()
     }
     if (!bold) bold = regular;
     MergeScriptFonts();
+    g_fonts[StyleModern] = {regular, bold};
+    // Retro: Tahoma (Windows 2000 / XP's dialog font, the closest TrueType to MS Sans Serif). Terminal: Consolas.
+    FontPair retro{SystemFont({L"tahoma.ttf", L"micross.ttf", L"arial.ttf"}), SystemFont({L"tahomabd.ttf", L"arialbd.ttf"})};
+    FontPair term{SystemFont({L"consola.ttf", L"lucon.ttf", L"cour.ttf"}), SystemFont({L"consolab.ttf", L"courbd.ttf"})};
+    for (FontPair* f : {&retro, &term}) {
+        if (!f->regular) continue;
+        if (!f->bold) f->bold = f->regular;
+        regular = f->regular, bold = f->bold;
+        MergeScriptFonts(); // Chinese, Japanese and Korean in these too
+    }
+    g_fonts[StyleRetro] = retro;
+    g_fonts[StyleTerminal] = term;
+    km::Log("Fonts: retro skins %s, terminal skins %s", retro.regular ? "Tahoma" : "Inter (Tahoma not found)",
+            term.regular ? "Consolas" : "Inter (Consolas not found)");
+    regular = g_fonts[StyleModern].regular, bold = g_fonts[StyleModern].bold;
 }
 
 void Draw()
 {
     float scale = g_scale > 0 ? g_scale : std::clamp(ImGui::GetIO().DisplaySize.y / 1080.f, 1.f, 2.f);
-    if (scale != g_appliedScale) {
+    if (scale != g_appliedScale || g_themeDirty) { // before anything is drawn this frame
         ApplyTheme(scale);
         g_appliedScale = scale;
+        g_themeDirty = false;
     }
-    ImGui::GetIO().MouseDrawCursor = g_open;
+    ImGui::GetIO().MouseDrawCursor = false; // our own cursor, drawn last (DrawCursor), so it's always on top
+    { // warn once each time the jump key turns out to be one of the game's keys
+        static std::string warned;
+        std::string clash = feat::g_on[feat::Jump] ? jump::Conflict() : "";
+        if (feat::g_on[feat::Jump] && jump::g_key == VK_SPACE && clash.empty()) clash = "Evade (by default)";
+        if (clash != warned) {
+            warned = clash;
+            if (!clash.empty()) {
+                char line[256];
+                snprintf(line, sizeof(line), T("Jump key %s is also the game's %s"), KeyName(jump::g_key).c_str(), clash.c_str());
+                PushToast(line, -1);
+            }
+        }
+    }
     esp::Draw();
+    DrawMinimapFrame();
+    DrawHopHud();
+    DrawSpeedometer();
     if (g_open) DrawWindow();
     DrawToasts();
+    DrawCursor();
 }
 
 bool IsOpen() { return g_open; }
 
+void Open()
+{
+    if (g_open) return;
+    g_open = true;
+    ClipCursor(nullptr);
+    km::Log("Menu opened from the game's pause menu");
+}
+
 bool WantsFrame()
 {
     if (g_open || feat::g_on[feat::Esp] || (feat::g_on[feat::SilentAim] && feat::g_on[feat::EspAimFov])) return true;
+    {
+        float x, y, size;
+        int shape;
+        if (minimap::FrameRect(x, y, size, shape)) return true;
+    }
+    if (feat::g_on[feat::Speedometer]) {
+        bool valid = false;
+        jump::LiveSpeed(&valid);
+        if (valid) return true;
+    }
+    if (feat::g_on[feat::Jump] && feat::g_on[feat::Bhop] && feat::g_on[feat::BhopHud]) { // hop readout over the game
+        jump::HudInfo h = jump::Hud();
+        double age = PreciseNow() - h.at;
+        if (h.grade[0] && age >= 0 && age <= 1.5) return true;
+    }
     std::lock_guard lock(g_toastMutex);
     return !g_toasts.empty();
 }
@@ -983,6 +1670,7 @@ void Toast(std::string text) { PushToast(std::move(text), -1); }
 
 bool OnKeyDown(unsigned vk)
 {
+    jump::OnKey(vk); // precise jump timing; never consumes the key
     int target = g_binding;
     if (target != kNotBinding) {
         g_binding = kNotBinding;
@@ -996,6 +1684,13 @@ bool OnKeyDown(unsigned vk)
         } else if (target == kBindMenu2) {
             g_menuKey2 = clear ? 0 : vk;
             cfg::SetInt("Menu", "Key2", int(g_menuKey2.load()));
+        } else if (target == kBindJump) {
+            jump::g_key = clear ? 0 : vk;
+            cfg::SetInt("Hotkeys", "JumpKey", int(jump::g_key.load()));
+        } else if (target == kBindFovUp || target == kBindFovDown) {
+            auto& key = target == kBindFovUp ? g_fovUp : g_fovDown;
+            key = clear ? 0 : vk;
+            cfg::SetInt("Hotkeys", target == kBindFovUp ? "FovUp" : "FovDown", int(key.load()));
         } else {
             g_hotkey[target] = clear ? 0 : int(vk);
             cfg::SetInt("Hotkeys", feat::kToggles[target].key, g_hotkey[target]);
@@ -1010,6 +1705,19 @@ bool OnKeyDown(unsigned vk)
         return true;
     }
     if (g_open) return false;
+    if (fixes::OnKey(vk)) return true; // number keys on an open keypad
+    if (vk && (vk == g_fovUp || vk == g_fovDown)) { // World FOV steps; turns the editor on if it was off
+        float step = (GetKeyState(VK_SHIFT) < 0 ? 5.f : 1.f) * (vk == g_fovUp ? 1.f : -1.f);
+        const feat::ValueInfo& info = feat::kValues[feat::WorldFov];
+        float v = std::clamp(std::round(feat::g_value[feat::WorldFov] + step), info.min, info.max);
+        feat::g_value[feat::WorldFov] = v;
+        feat::g_on[feat::CustomFov] = true;
+        feat::Save();
+        char text[64];
+        snprintf(text, sizeof(text), "%s  %.0f°", T("World FOV"), v);
+        PushToast(text, -1);
+        return true;
+    }
     for (int t = 0; t < feat::ToggleCount; t++) {
         if (g_hotkey[t] != int(vk)) continue;
         bool on = !feat::g_on[t];

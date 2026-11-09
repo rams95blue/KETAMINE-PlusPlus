@@ -1,5 +1,10 @@
 #include "features.h"
 #include "config.h"
+#include "fixes.h"
+#include "fov.h"
+#include "jump.h"
+#include "minimap.h"
+#include "uitweaks.h"
 #include "lang.h"
 #include "log.h"
 #include "menu.h"
@@ -9,6 +14,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -32,6 +38,16 @@ const ToggleInfo kToggles[ToggleCount] = {
      "Your shots hit the head of the enemy nearest the crosshair, inside the circle. The camera doesn't move."},
     {"Fly", "Fly", "Flies where you look, with your usual movement keys or stick."},
     {"Noclip", "Noclip", "Fly through walls, where you look, with your usual movement keys."},
+    {"UnlockPitch", "Look straight up and down",
+     "Lifts the game's limit on how far you can look up and down, to the full 90 degrees.", true},
+    {"Jump", "Jump", "Adds a jump on the jump key (Space by default). Not during scripted moments, menus or flying.", true},
+    {"Bhop", "Bunny hop",
+     "Press jump as you land to chain hops: each chained hop keeps your air velocity and adds the gain, a perfectly "
+     "timed one (within 30 ms of landing) adds double. Strafe while turning the mouse in the air to build speed.", true},
+    {"BhopAuto", "Auto hop (hold the key)",
+     "Hold the jump key to hop on every landing instead of timing each press. Auto hops never count as perfect.", true},
+    {"BhopHud", "Hop readout", "Shows each hop's timing (PERFECT / GOOD / LATE), gain and speed near the crosshair."},
+    {"Speedometer", "Speedometer", "Your horizontal speed under the crosshair, all the time, in the unit below."},
     {"FreezeAI", "Freeze enemies", "Enemies stop moving and attacking."},
     {"HideHUD", "Hide HUD", "Hides the game interface (menus you open later stay visible)."},
     {"FreeCam", "Free camera", "Detached camera: movement keys to move, mouse to look. Your character stays in place."},
@@ -39,7 +55,41 @@ const ToggleInfo kToggles[ToggleCount] = {
      "The world stops while the free camera is on: enemies, effects, physics. You still move and look around."},
     {"AutoLockpick", "Auto lockpick", "Locks open by themselves a moment after you start picking them."},
     {"SkipIntros", "Skip intros",
-     "Skips the logos and notices when the game starts. The EULA and brightness screens still show the first time."},
+     "Skips the logos and notices when the game starts. The EULA and brightness screens still show the first time.", true},
+    {"CustomFov", "Custom FOV",
+     "Your own field of view for gameplay only: cutscenes and other cameras keep the game's FOV, and blends stay smooth.", true},
+    {"FovKeepEffects", "Keep the game's FOV effects",
+     "The game's own FOV changes (sprinting, climbing ladders) are kept, scaled around your FOV.", true},
+    {"FixToolInput", "Keep movement after tools",
+     "Held movement keys keep working when you switch the flashlight off or a heal finishes (the game drops them).", true},
+    {"KeypadFix", "Keypad input fix",
+     "Keypads: no 0.4 s lockout after each cursor move, a held key doesn't repeat, and the number row, numpad and "
+     "Backspace press the buttons directly.", true},
+    {"SpeedUp", "Speed up interactions",
+     "Save points, the Lament Configuration puzzle, the dock boat, cylinder puzzles and reward pillars play faster. "
+     "Every part of each sequence is sped up by the same factor, so it still happens in the original order.", true},
+    {"QuickInteract", "Quick interact",
+     "Item pickups (upgrades included) and ladders complete faster when you hold E, and ladder climbs play faster. "
+     "A tap still works as normal; bear traps and other scripted holds keep their speed.", true},
+    {"HudAutoHide", "Hide leftover HUD when idle",
+     "When the game's dynamic HUD has faded most of itself, the elements that never fade (the \"DROP [Z]\" prompt of "
+     "breakable melee weapons) fade too after the delay below, and come back with the rest of the HUD.", true},
+    {"CutsceneSkip", "Auto-skip cutscenes",
+     "Skips every cutscene the game lets you skip, through its own skip, a second after it starts."},
+    {"Minimap", "Minimap",
+     "A minimap at the top right: a live copy of the game's own map, centred on you. Hidden in the Labyrinth and "
+     "behind menus, maps and cutscenes."},
+    {"MinimapRotate", "Rotate with the player", "The map turns with you, so the way you face (your first-person view) always points up. Off: north stays up.", true},
+    {"MinimapAlways", "Show where the game blocks its map",
+     "Also shows the minimap in areas where the game's TAB map is unavailable (not in the Labyrinth).", true},
+    {"MinimapScreenEdge", "Align to the screen edge", "On ultrawide screens: the real right edge instead of the 16:9 HUD area."},
+    {"MinimapFrame", "Frame", "An outline around the minimap, in your skin's accent colour, for every shape.", true},
+    {"PauseMenuEntry", "KETAMINE++ in the pause menu",
+     "Adds a KETAMINE++ button to the game's pause menu that opens this menu.", true},
+    {"SimplePrompts", "Simple prompts (experimental)",
+     "Interaction prompts lose their artwork and show just the key, in the colour and size below. Only prompts that show "
+     "their key as text are changed. KetaminePlusPlus.log lists what it changed."},
+    {"PromptBrackets", "Key in brackets", "Shows the key as [F] instead of F.", true},
     {"Esp", "ESP", "Shows enemies and objects through walls."},
     {"EspBox", "Box", "Corner box around each enemy.", true},
     {"EspHealth", "Health bar", "Enemy health next to the box.", true},
@@ -53,13 +103,21 @@ const ToggleInfo kToggles[ToggleCount] = {
     {"EspItems", "Items on the ground", "Ammo, money, healing, weapons and materials you can pick up.", true},
     {"EspContainers", "Loot containers", "Chests, shelves and breakable crates."},
     {"EspSavePoints", "Save points", "Where you can save."},
-    {"EspAimFov", "Aim FOV circle", "Shows the silent aim circle around the crosshair while silent aim is on.", true},
+    {"EspAimFov", "Aim FOV circle", "Shows the silent aim circle around the crosshair while silent aim is on."},
 };
 
 const ValueInfo kValues[ValueCount] = {
-    {"DamageMult", 1, 1, 50}, {"SpeedMult", 1, 0.5f, 5}, {"JumpMult", 1, 1, 10},
-    {"TimeScale", 1, 0.1f, 4}, {"Fov", 0, 0, 130},       {"KillRadius", 20, 5, 100},
+    {"DamageMult", 1, 1, 50}, {"SpeedMult", 1, 0.5f, 5}, {"JumpMult", 1.2f, 1, 10},
+    {"TimeScale", 1, 0.1f, 4}, {"KillRadius", 20, 5, 100},
     {"EspRange", 80, 10, 300}, {"EspWorldRange", 30, 5, 150}, {"AimFov", 8, 1, 45},
+    {"WorldFov", 120, 30, 150}, {"ViewmodelFov", 110, 0, 150}, {"AdsFov", 90, 0, 150}, {"FovBlend", 0.25f, 0, 2},
+    {"InteractHold", 0.3f, 0.1f, 1.0f}, {"LadderSpeed", 1.6f, 1.0f, 3.0f}, {"HudIdleDelay", 4.0f, 1.0f, 30.0f},
+    {"SaveSpeed", 2.5f, 1, 5}, {"ConfigSpeed", 2.0f, 1, 5}, {"BoatSpeed", 3.5f, 1, 6},
+    {"CylinderSpeed", 2.0f, 1, 5}, {"CylinderInputSpeed", 3.0f, 1, 6}, {"PillarSpeed", 3.5f, 1, 6},
+    {"BhopGain", 10, 0, 25}, {"BhopCap", 0, 0, 10}, {"BhopAirStrafe", 10, 0, 30}, {"SpeedUnit", 0, 0, 3},
+    {"MinimapSize", 320, 160, 700}, {"MinimapZoom", 1.6f, 0.3f, 6}, {"MinimapOpacity", 10, 0, 90},
+    {"MinimapShape", 1, 0, 3}, {"MinimapOffsetX", 0, -600, 600}, {"MinimapOffsetY", 0, -200, 600},
+    {"PromptSize", 22, 8, 64},
 };
 
 const char* const kPowerNames[PowerCount] = {"Telekinesis", "Pyrokinesis", "Hellchains"};
@@ -747,7 +805,7 @@ void Axes(const Vec& rot, Vec& fwd, Vec& right, Vec& up)
 }
 
 // The camera and the engine's own projection, measured this frame. APlayerController::ProjectWorldLocationToScreen
-// is what the picture uses (the FOV editor's locked FOV, the aspect-ratio rules, letterboxing, aiming zoom): a
+// is what the picture uses (the FOV editor's FOV, the aspect-ratio rules, letterboxing, aiming zoom): a
 // perspective projection is set by its centre and two focal lengths, so three points in front of the camera give
 // it exactly, and every ESP point is then projected with it (no per-bone engine call). Rebuilding it from the camera's
 // FOV went wrong: the picture uses the camera manager's FOV angle (locked by the FOV editor), not the cached one.
@@ -860,6 +918,14 @@ void TickEsp(UObject* pc, UObject* player, uint64_t now)
 void TickFrame()
 {
     UObject* player = s.player.Get();
+    fov::OnFrame(player ? s.pc.Get() : nullptr);
+    jump::Frame(player, PreciseSeconds());
+    {
+        std::function<void()> mm = [&] { minimap::Frame(s.pc.Get(), player); };
+        static int faults = 0;
+        if (!Guard(mm) && faults++ < 5) km::Log("Minimap frame faulted (skipped)");
+    }
+    fixes::Frame(s.pc.Get(), PreciseSeconds());
     if (UObject* pc = s.pc.Get(); pc && player) MoveFreeCam(pc, player);
     if (player && (g_on[Esp] || (g_on[SilentAim] && g_on[EspAimFov]))) return TickEsp(s.pc.Get(), player, GetTickCount64());
     std::lock_guard lock(g_espMutex);
@@ -938,6 +1004,75 @@ void hkAllTraceEnds(UObject* ctx, void* stack, void* result) // shotguns: one en
     Redirect(result, true);
 }
 
+// ---- Look limits: the camera manager's ViewPitchMin / ViewPitchMax, plus pitch limits the game keeps on the player or
+// its settings asset (found by name: "Pitch" with "Min"/"Max"/"Limit"/"Clamp"). Originals come back when turned off.
+struct PitchLimit {
+    Weak owner;
+    Prop prop;
+    std::string name;
+    double orig;
+};
+std::vector<PitchLimit> g_pitch;
+Weak g_pitchPcm;
+bool g_pitchScanned = false;
+
+void ApplyUnlockPitch(UObject* player)
+{
+    UObject* pcm = Ptr(s.pc.Get(), "PlayerCameraManager");
+    auto restore = [] {
+        for (PitchLimit& l : g_pitch)
+            if (UObject* o = l.owner.Get()) {
+                uint8_t* a = reinterpret_cast<uint8_t*>(o) + l.prop.offset;
+                if (l.prop.kind == 'f') *reinterpret_cast<float*>(a) = float(l.orig);
+                else if (l.prop.kind == 'd') *reinterpret_cast<double*>(a) = l.orig;
+            }
+        g_pitch.clear();
+        g_pitchScanned = false;
+    };
+    if (!g_on[UnlockPitch]) {
+        if (!g_pitch.empty()) restore();
+        return;
+    }
+    if (pcm != g_pitchPcm.Get()) { // new camera manager or pawn: look again
+        restore();
+        g_pitchPcm = Weak(pcm);
+    }
+    if (!g_pitchScanned) {
+        g_pitchScanned = true;
+        for (UObject* o : {pcm, player, Ptr(player, "CharacterSettings")}) {
+            if (!o) continue;
+            ForEachProp(ClassOf(o), [&](const std::string& name, const Prop& p) {
+                if (p.kind != 'f' && p.kind != 'd') return;
+                std::string l;
+                for (char c : name) l += char(std::tolower(uint8_t(c)));
+                bool isMin = l.find("min") != std::string::npos, isMax = l.find("max") != std::string::npos;
+                if (l.find("puzzle") != std::string::npos || l.find("yaw") != std::string::npos) return; // close-up cameras
+                if (l.find("pitch") == std::string::npos || (!isMin && !isMax && l.find("limit") == std::string::npos &&
+                                                             l.find("clamp") == std::string::npos))
+                    return;
+                uint8_t* a = reinterpret_cast<uint8_t*>(o) + p.offset;
+                double v = p.kind == 'f' ? *reinterpret_cast<float*>(a) : *reinterpret_cast<double*>(a);
+                g_pitch.push_back({Weak(o), p, name, v});
+                km::Log("Look limits: %s.%s = %.1f", Name(reinterpret_cast<UObject*>(ClassOf(o))).c_str(), name.c_str(), v);
+            });
+        }
+    }
+    for (PitchLimit& l : g_pitch) { // written every tick: the game may set its limits again
+        UObject* o = l.owner.Get();
+        if (!o) continue;
+        std::string n;
+        for (char c : l.name) n += char(std::tolower(uint8_t(c)));
+        // Only limits that are angles get opened up: a minimum goes to -89.9, a maximum to 89.9 (never narrowed).
+        double v = l.orig, want;
+        if (n.find("min") != std::string::npos && v < 0 && v > -89.9) want = -89.9;
+        else if (n.find("max") != std::string::npos && v > 0 && v < 89.9) want = 89.9;
+        else continue;
+        uint8_t* a = reinterpret_cast<uint8_t*>(o) + l.prop.offset;
+        if (l.prop.kind == 'f') *reinterpret_cast<float*>(a) = float(want);
+        else *reinterpret_cast<double*>(a) = want;
+    }
+}
+
 void TickPlayer(UObject* player, uint64_t now, Snapshot& snap)
 {
     UObject* pc = s.pc.Get();
@@ -1008,6 +1143,7 @@ void TickPlayer(UObject* player, uint64_t now, Snapshot& snap)
             *ammo = top;
         }
     }
+    ApplyUnlockPitch(player);
     // Silent aim: the shot functions are hooked the first time it's turned on (shots pass through untouched when off).
     UClass* fire = FindClass("PlayerAbility_FireBase");
     UFunction* traceEnd = FindFunction(fire, "GetTraceEndPosition");
@@ -1060,7 +1196,7 @@ void TickPlayer(UObject* player, uint64_t now, Snapshot& snap)
     }
 
     // Movement
-    if (!cmc) why[Fly] = why[Noclip] = why[FreeCam] = "Movement component not found.";
+    if (!cmc) why[Fly] = why[Noclip] = why[FreeCam] = why[Jump] = why[Bhop] = "Movement component not found.";
     if (!FindClass("CameraActor")) why[FreeCam] = "Camera class not found.";
     why[PauseTime] = why[FreeCam];
     bool camWasOn = s.applied[FreeCam];
@@ -1120,8 +1256,6 @@ void TickPlayer(UObject* player, uint64_t now, Snapshot& snap)
         float dilation = get.Arg(0, pc).Run() ? get.Out<float>("ReturnValue") : 1;
         if (float* d = Member<float>(pc, "CustomTimeDilation")) *d = paused && dilation > 0 ? 1 / dilation : 1;
     }
-    float fov = g_value[Fov];
-    if (fov != s.lastValue[Fov]) Call(pc, "FOV").Arg(0, fov).Run();
 
     bool hudWasHidden = s.applied[HideHUD];
     if (Track(HideHUD, ShowWidgets) && !hudWasHidden) HideWidgets();
@@ -1270,7 +1404,16 @@ void Tick()
         s.camera = {};
         std::fill(std::begin(s.applied), std::end(s.applied), false);
         for (int v = 0; v < ValueCount; v++) s.lastValue[v] = kValues[v].def; // re-apply values to the new pawn
-        if (player) km::Log("Player found: %s", Name(player).c_str());
+        if (player) {
+            km::Log("Player found: %s", Name(player).c_str());
+            // Genesis Configuration: what the loaded save has, first. Its cheats start off with every load; turn them
+            // on again in the Combat tab if you want them.
+            for (int t : {NoSufferingCost, NoPowerCooldown})
+                if (g_on[t]) {
+                    g_on[t] = false;
+                    km::Log("Genesis Configuration: %s off for this load (the save's own state)", kToggles[t].key);
+                }
+        }
     }
 
     snap.player = player != nullptr;
@@ -1292,7 +1435,38 @@ void Tick()
         std::lock_guard lock(g_espMutex);
         g_esp = {};
     }
-    if (!snap.reflection) snap.why.fill("Game engine not hooked: see KetamineMenu.log.");
+    if (snap.reflection) {
+        std::function<void()> mm = [&] { minimap::Tick(s.pc.Get(), player); };
+        static int faults = 0;
+        if (!Guard(mm) && faults++ < 5) km::Log("Minimap tick faulted (skipped)");
+    }
+    if (snap.reflection) {
+        std::function<void()> ui = [&] { uitweaks::Tick(s.pc.Get()); };
+        static int faults = 0;
+        if (!Guard(ui) && faults++ < 5) km::Log("UI tweaks tick faulted (skipped)");
+    }
+    for (int t : {Minimap, MinimapRotate, MinimapAlways, MinimapScreenEdge, MinimapFrame, PauseMenuEntry, SimplePrompts, PromptBrackets})
+        snap.why[t].clear(); // preferences
+    snap.valueWhy[PromptSize].clear();
+    for (int v : {MinimapSize, MinimapZoom, MinimapOpacity, MinimapShape, MinimapOffsetX, MinimapOffsetY}) snap.valueWhy[v].clear();
+    // Game fixes: preferences too, and the cutscene skip works without a player.
+    {
+        std::string fixWhy[fixes::WhyCount];
+        if (snap.reflection) fixes::Tick(s.pc.Get(), player, now, fixWhy);
+        const Toggle ft[fixes::WhyCount] = {FixToolInput, KeypadFix, SpeedUp, QuickInteract, CutsceneSkip};
+        for (int i = 0; i < fixes::WhyCount; i++) snap.why[ft[i]] = fixWhy[i];
+        snap.valueWhy[InteractHold] = snap.valueWhy[LadderSpeed] = fixWhy[fixes::WhyQuick];
+        for (int v : {SaveSpeed, ConfigSpeed, BoatSpeed, CylinderSpeed, CylinderInputSpeed, PillarSpeed})
+            snap.valueWhy[v] = fixWhy[fixes::WhySpeed];
+    }
+    // The FOV editor's settings are preferences: they can be set before a save is loaded.
+    {
+        std::string fovWhy = fov::GetStatus().error;
+        if (!fovWhy.empty()) fovWhy = "FOV editor unavailable: " + fovWhy;
+        for (int t : {CustomFov, FovKeepEffects}) snap.why[t] = fovWhy;
+        for (int v : {WorldFov, ViewmodelFov, AdsFov, FovBlend}) snap.valueWhy[v] = fovWhy;
+    }
+    if (!snap.reflection) snap.why.fill("Game engine not hooked: see KetaminePlusPlus.log.");
     snap.cheatManager = CheatAvailable();
     for (int i = 0; i < 3; i++) snap.slots[i] = s.slotMap[i];
 
@@ -1334,9 +1508,9 @@ Snapshot GetSnapshot()
     // The tick never runs without the engine hooks: grey everything out here.
     if (!Ready()) {
         snap.reflection = false;
-        snap.why.fill("Game engine not hooked: see KetamineMenu.log.");
-        snap.valueWhy.fill("Game engine not hooked: see KetamineMenu.log.");
-        snap.powersWhy = "Game engine not hooked: see KetamineMenu.log.";
+        snap.why.fill("Game engine not hooked: see KetaminePlusPlus.log.");
+        snap.valueWhy.fill("Game engine not hooked: see KetaminePlusPlus.log.");
+        snap.powersWhy = "Game engine not hooked: see KetaminePlusPlus.log.";
     }
     return snap;
 }
@@ -1344,9 +1518,11 @@ Snapshot GetSnapshot()
 void Init()
 {
     for (int t = 0; t < ToggleCount; t++) g_on[t] = cfg::GetInt("Toggles", kToggles[t].key, kToggles[t].def) != 0;
+    g_on[NoSufferingCost] = g_on[NoPowerCooldown] = false; // Genesis Configuration: per load, never from the ini
     for (int v = 0; v < ValueCount; v++) {
         g_value[v] = std::clamp(cfg::GetFloat("Values", kValues[v].key, kValues[v].def), kValues[v].min, kValues[v].max);
-        if (kValues[v].key == std::string("Fov") && g_value[v] < 30) g_value[v] = 0; // 0 = game default
+        if ((v == ViewmodelFov || v == AdsFov) && g_value[v] < 30) g_value[v] = 0; // 0 = follow (world / game)
+        if (v == BhopCap && g_value[v] < 1) g_value[v] = 0;                         // 0 = unlimited
         s.lastValue[v] = kValues[v].def;
     }
     for (int i = 0; i < 3; i++) {

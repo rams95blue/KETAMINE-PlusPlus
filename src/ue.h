@@ -5,6 +5,7 @@
 #include <cstring>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace ue {
 
@@ -47,7 +48,8 @@ template <class F> void ForEachInstance(const UClass* cls, F&& f) // live gamepl
 struct Prop {
     int32_t offset = -1;
     uint8_t boolMask = 0;       // non-zero for bool properties (bitfields included)
-    const void* inner = nullptr; // struct properties: the UScriptStruct; object properties: the class
+    char kind = '?';            // 'f' float, 'd' double, 'i' int32, 'b' bool, 's' struct, 'a' array, 'o' object, 't' text, '?' other
+    const void* inner = nullptr; // struct properties: the UScriptStruct; object properties: the class; arrays: the inner FProperty
     explicit operator bool() const { return offset >= 0; }
 };
 Prop FindProp(const UClass* structOrClass, const char* name); // cached, walks the Super chain
@@ -85,7 +87,10 @@ public:
     template <class T> T Out(const char* name)
     {
         T v{};
-        if (void* p = Slot(name)) std::memcpy(&v, p, sizeof(T));
+        if (auto* p = static_cast<char*>(Slot(name))) { // never past the parameter buffer
+            size_t room = size_t(params_.data() + params_.size() - p);
+            std::memcpy(&v, p, sizeof(T) < room ? sizeof(T) : room);
+        }
         return v;
     }
 
@@ -123,6 +128,33 @@ double PreciseSeconds(); // QueryPerformanceCounter clock (GetTickCount64 moves 
 // `*original`. The parameters are already consumed when the original returns; `result` points at the return value.
 using NativeThunk = void (*)(UObject* context, void* stack, void* result);
 bool HookNative(UFunction* fn, NativeThunk detour, NativeThunk* original);
+NativeThunk NativeOf(const UFunction* fn); // the code the function runs now (UFunction::Func)
+
+// ---- lower level, for hooks (hooks.cpp)
+
+// A function's parameters (CPF_Parm), in declaration order.
+struct Param {
+    std::string name;
+    int32_t offset = 0, size = 0; // in the parameter block; size = ElementSize * ArrayDim
+    uint64_t flags = 0;           // EPropertyFlags: CPF_OutParm 0x100, CPF_ReturnParm 0x400, CPF_ReferenceParm 0x8000000
+    char kind = '?';
+};
+std::vector<Param> Params(const UFunction* fn);
+// Every property of a class or struct and its supers: f(name, prop).
+void ForEachProp(const UClass* structOrClass, const std::function<void(const std::string&, const Prop&)>& f);
+int32_t ParamsSize(const UFunction* fn);
+uint32_t FunctionFlags(const UFunction* fn); // FUNC_Native = 0x400
+void ProcessEventRaw(UObject* obj, UFunction* fn, void* params); // the original ProcessEvent (no game-thread work)
+bool IsLive(const void* obj);           // a live UObject (its object-array slot points back at it), read safely
+bool NameIs(const UObject* obj, const char* name); // allocation-free name test
+// One pass over the object array for several class names at once (FindClass scans everything per miss).
+void FindClasses(const char* const* names, int count, UClass** out);
+void ForgetClass(const char* name); // drop a cached class (it was unloaded)
+int32_t ObjectIndex(const UObject* obj);
+
+// A widget's children read straight from reflection, with no call into the game: a user widget's tree root, a
+// panel's Slots[i].Content (content widgets are panels with one slot). Every pointer is checked before use.
+void WidgetChildren(UObject* widget, std::vector<UObject*>& out, int max = 128);
 
 // Runs fn behind an SEH guard: false when it faulted (code running inside game functions must never crash the game).
 bool Guard(std::function<void()>& fn);

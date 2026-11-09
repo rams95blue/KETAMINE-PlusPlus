@@ -1,4 +1,5 @@
 <p align="center">
+
   <img src="docs/banner.png" alt="Hellraiser Revival's Ketamine Menu" width="100%">
 </p>
 
@@ -43,6 +44,8 @@
 
 > [!TIP]
 > **Faça backup dos seus saves** antes de começar: `%LOCALAPPDATA%\Hellraiser\Saved\SaveGames`.
+
+> **KETAMINE++** by **rams95** ([github.com/rams95blue](https://github.com/rams95blue)), bundling: Ketamine Menu by **omxga** (literalynn) · TrueFOV by **Reynbow** · ToolInputFix, KeypadInputFix, SpeedUpInteractions, QuickInteract, CutsceneAutoSkip by **uwumatic101** · Hellraiser True Minimap by **Thidrec** · Dear ImGui, MinHook, Inter. See [KETAMINE++.md](KETAMINE++.md).
 
 ## Instalação
 

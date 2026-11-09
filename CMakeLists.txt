@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(KetamineMenu VERSION 0.4.14 LANGUAGES C CXX ASM_MASM)
+project(KetaminePlusPlus VERSION 1.4.0 LANGUAGES C CXX ASM_MASM)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,21 +40,21 @@ add_library(minhook STATIC
 target_include_directories(minhook PUBLIC ${minhook_SOURCE_DIR}/include)
 
 # The game statically imports winmm.dll, so a winmm.dll next to the exe is loaded at startup.
-add_library(KetamineMenu SHARED src/dllmain.cpp src/overlay.cpp src/menu.cpp src/ue.cpp src/features.cpp src/esp.cpp src/lang.cpp src/resources.rc src/winmm_stubs.asm)
-set_target_properties(KetamineMenu PROPERTIES OUTPUT_NAME winmm)
-target_compile_definitions(KetamineMenu PRIVATE KM_VERSION="${PROJECT_VERSION}" WIN32_LEAN_AND_MEAN NOMINMAX)
-target_compile_options(KetamineMenu PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/W4 /utf-8>)
+add_library(KetaminePlusPlus SHARED src/dllmain.cpp src/overlay.cpp src/menu.cpp src/ue.cpp src/features.cpp src/esp.cpp src/lang.cpp src/fov.cpp src/scan.cpp src/fixes.cpp src/jump.cpp src/hooks.cpp src/minimap.cpp src/uitweaks.cpp src/resources.rc src/winmm_stubs.asm)
+set_target_properties(KetaminePlusPlus PROPERTIES OUTPUT_NAME winmm)
+target_compile_definitions(KetaminePlusPlus PRIVATE KM_VERSION="${PROJECT_VERSION}" WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(KetaminePlusPlus PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/W4 /utf-8>)
 option(KM_DUMPER "Dev build that loads Dumper-7.dll from the game folder (SDK re-dump after a patch)" OFF)
 if(KM_DUMPER)
-    target_compile_definitions(KetamineMenu PRIVATE KM_DUMPER)
+    target_compile_definitions(KetaminePlusPlus PRIVATE KM_DUMPER)
 endif()
-target_link_libraries(KetamineMenu PRIVATE imgui minhook dxgi delayimp)
+target_link_libraries(KetaminePlusPlus PRIVATE imgui minhook dxgi delayimp)
 # Load these only when the overlay initialises, not at game startup.
-target_link_options(KetamineMenu PRIVATE /DELAYLOAD:d3dcompiler_47.dll /DELAYLOAD:dxgi.dll)
+target_link_options(KetaminePlusPlus PRIVATE /DELAYLOAD:d3dcompiler_47.dll /DELAYLOAD:dxgi.dll)
 
 enable_testing()
 add_executable(proxy_test tests/proxy_test.cpp)
-add_test(NAME proxy_test COMMAND proxy_test $<TARGET_FILE:KetamineMenu>)
+add_test(NAME proxy_test COMMAND proxy_test $<TARGET_FILE:KetaminePlusPlus>)
 
 # Minimal DX11/DX12 app that loads the DLL, toggles the menu and saves a screenshot (manual check of the overlay).
 add_executable(overlay_host tests/overlay_host.cpp)

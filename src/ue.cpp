@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <MinHook.h>
 
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -11,10 +12,12 @@
 
 namespace ue {
 
+KM_NOINLINE static void CopyBytes(void* dst, const void* src, size_t n) { memcpy(dst, src, n); }
+
 bool SafeRead(const void* src, void* dst, size_t n)
 {
     __try {
-        memcpy(dst, src, n);
+        CopyBytes(dst, src, n);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -53,9 +56,23 @@ struct {
 } g;
 
 std::mutex g_cacheMutex;
-std::map<std::pair<const void*, std::string>, Prop> g_props;
-std::map<std::pair<const void*, std::string>, UFunction*> g_funcs;
+// Lookups are cached by the struct's address AND its object-array index: after a level reload a new class can sit at
+// the address of an unloaded one, and an address-only cache handed back the old class's (freed) function.
+struct CachedProp {
+    Prop prop;
+    int32_t index;
+};
+struct CachedFunc {
+    UFunction* fn;
+    int32_t index;
+};
+std::map<std::pair<const void*, std::string>, CachedProp> g_props;
+std::map<std::pair<const void*, std::string>, CachedFunc> g_funcs;
 std::map<std::string, UClass*> g_classes;
+// Misses are remembered for a moment: a class that isn't loaded (a level's Blueprint) used to cost a scan of the whole
+// object array on every call, which features polling at 60 Hz turned into a steady stutter.
+std::map<std::string, uint64_t> g_classMisses, g_objectMisses;
+constexpr uint64_t kMissMs = 2000;
 
 std::mutex g_taskMutex;
 std::vector<std::function<void()>> g_tasks;
@@ -135,6 +152,37 @@ bool NameEquals(const void* fname, const char* text)
 
 const void* SuperOf(const void* s) { return Read<const void*>(s, off::StructSuper); }
 
+// A cached object is only trusted while it is still live and still has the name it was found by.
+bool StillNamed(const void* obj, const char* name)
+{
+    int32_t index = -1;
+    if (!obj || !SafeRead(static_cast<const uint8_t*>(obj) + off::ObjIndex, &index, sizeof(index))) return false;
+    int32_t count = g.numElements ? *g.numElements : 0;
+    if (index < 0 || index >= count) return false;
+    uint8_t* chunk = g.chunks[index / g.perChunk];
+    if (!chunk || *reinterpret_cast<const void**>(chunk + size_t(index % g.perChunk) * g.itemSize) != obj) return false;
+    return NameEquals(static_cast<const uint8_t*>(obj) + off::ObjName, name);
+}
+int32_t StructIndex(const void* s)
+{
+    int32_t index = -1;
+    return s && SafeRead(static_cast<const uint8_t*>(s) + off::ObjIndex, &index, sizeof(index)) ? index : -1;
+}
+
+// FFieldClass starts with its FName.
+char KindOf(const void* fieldClass)
+{
+    if (NameEquals(fieldClass, "BoolProperty")) return 'b';
+    if (NameEquals(fieldClass, "FloatProperty")) return 'f';
+    if (NameEquals(fieldClass, "DoubleProperty")) return 'd';
+    if (NameEquals(fieldClass, "IntProperty")) return 'i';
+    if (NameEquals(fieldClass, "StructProperty")) return 's';
+    if (NameEquals(fieldClass, "ArrayProperty")) return 'a';
+    if (NameEquals(fieldClass, "ObjectProperty")) return 'o';
+    if (NameEquals(fieldClass, "TextProperty")) return 't';
+    return '?';
+}
+
 // ------------------------------------------------------------------ discovery
 
 bool FindGObjects()
@@ -207,7 +255,7 @@ const uint8_t* FindInRange(const uint8_t* from, size_t len, const uint8_t* pat, 
 
 ProcessEventFn oProcessEvent;
 
-void InvokeTask(void* fn) { (*static_cast<std::function<void()>*>(fn))(); }
+KM_NOINLINE void InvokeTask(void* fn) { (*static_cast<std::function<void()>*>(fn))(); }
 
 // SEH barrier: a feature hitting bad memory is logged and skipped instead of crashing the game.
 bool Guarded(std::function<void()>& fn)
@@ -352,6 +400,8 @@ bool Init(unsigned gameThreadId)
         {
             std::lock_guard lock(g_cacheMutex);
             g_classes.clear();
+            g_classMisses.clear();
+            g_objectMisses.clear();
             g_props.clear();
             g_funcs.clear();
         }
@@ -398,7 +448,11 @@ UClass* FindClass(const char* name)
 {
     {
         std::lock_guard lock(g_cacheMutex);
-        if (auto it = g_classes.find(name); it != g_classes.end()) return it->second;
+        if (auto it = g_classes.find(name); it != g_classes.end()) {
+            if (StillNamed(it->second, name)) return it->second;
+            g_classes.erase(it); // unloaded (or something else at its address now): look again
+        }
+        if (auto it = g_classMisses.find(name); it != g_classMisses.end() && PreciseMs() - it->second < kMissMs) return nullptr;
     }
     static UClass* classClass; // UClass's own class: the object named "Class" whose class is itself
     UClass* found = nullptr;
@@ -415,15 +469,23 @@ UClass* FindClass(const char* name)
         found = reinterpret_cast<UClass*>(o);
         return false;
     });
-    if (found) { // only cache hits: a missing class may be loaded later (e.g. with the next level)
-        std::lock_guard lock(g_cacheMutex);
+    std::lock_guard lock(g_cacheMutex);
+    if (found) { // a missing class may be loaded later (e.g. with the next level): misses expire
         g_classes[name] = found;
+        g_classMisses.erase(name);
+    } else {
+        g_classMisses[name] = PreciseMs();
     }
     return found;
 }
 
 UObject* FindObject(const char* name, const UClass* cls)
 {
+    std::string key = std::string(name) + "|" + std::to_string(reinterpret_cast<uintptr_t>(cls));
+    {
+        std::lock_guard lock(g_cacheMutex);
+        if (auto it = g_objectMisses.find(key); it != g_objectMisses.end() && PreciseMs() - it->second < kMissMs) return nullptr;
+    }
     bool wantDefault = strncmp(name, "Default__", 9) == 0;
     UObject* found = nullptr;
     ForEachObject([&](UObject* o) {
@@ -432,6 +494,9 @@ UObject* FindObject(const char* name, const UClass* cls)
         found = o;
         return false;
     });
+    std::lock_guard lock(g_cacheMutex);
+    if (found) g_objectMisses.erase(key);
+    else g_objectMisses[key] = PreciseMs();
     return found;
 }
 
@@ -441,7 +506,10 @@ Prop FindProp(const UClass* structOrClass, const char* name)
     auto key = std::make_pair(static_cast<const void*>(structOrClass), std::string(name));
     {
         std::lock_guard lock(g_cacheMutex);
-        if (auto it = g_props.find(key); it != g_props.end()) return it->second;
+        if (auto it = g_props.find(key); it != g_props.end()) {
+            if (it->second.index == StructIndex(structOrClass)) return it->second.prop;
+            g_props.erase(it);
+        }
     }
     Prop prop;
     for (const void* s = structOrClass; s && !prop; s = SuperOf(s)) {
@@ -449,7 +517,8 @@ Prop FindProp(const UClass* structOrClass, const char* name)
             if (!NameEquals(f + off::FFieldName, name)) continue;
             prop.offset = Read<int32_t>(f, off::PropOffset);
             const void* fieldClass = Read<const void*>(f, off::FFieldClass);
-            if (NameEquals(fieldClass, "BoolProperty")) { // FieldSize, ByteOffset, ByteMask, FieldMask
+            prop.kind = KindOf(fieldClass);
+            if (prop.kind == 'b') { // FieldSize, ByteOffset, ByteMask, FieldMask
                 prop.offset += Read<uint8_t>(f, off::PropExtra + 1);
                 prop.boolMask = Read<uint8_t>(f, off::PropExtra + 2);
             } else {
@@ -459,7 +528,7 @@ Prop FindProp(const UClass* structOrClass, const char* name)
         }
     }
     std::lock_guard lock(g_cacheMutex);
-    g_props[key] = prop;
+    g_props[key] = {prop, StructIndex(structOrClass)};
     return prop;
 }
 
@@ -469,14 +538,17 @@ UFunction* FindFunction(const UClass* cls, const char* name)
     auto key = std::make_pair(static_cast<const void*>(cls), std::string(name));
     {
         std::lock_guard lock(g_cacheMutex);
-        if (auto it = g_funcs.find(key); it != g_funcs.end()) return it->second;
+        if (auto it = g_funcs.find(key); it != g_funcs.end()) {
+            if (it->second.index == StructIndex(cls) && (!it->second.fn || StillNamed(it->second.fn, name))) return it->second.fn;
+            g_funcs.erase(it);
+        }
     }
     UFunction* found = nullptr;
     for (const void* s = cls; s && !found; s = SuperOf(s))
         for (auto* f = Read<const uint8_t*>(s, off::StructChildren); f && !found; f = Read<const uint8_t*>(f, off::UFieldNext))
             if (NameEquals(f + off::ObjName, name)) found = reinterpret_cast<UFunction*>(const_cast<uint8_t*>(f));
     std::lock_guard lock(g_cacheMutex);
-    g_funcs[key] = found;
+    g_funcs[key] = {found, StructIndex(cls)};
     return found;
 }
 
@@ -579,10 +651,128 @@ double PreciseSeconds()
 
 bool Guard(std::function<void()>& fn) { return Guarded(fn); }
 
-bool HookNative(UFunction* fn, NativeThunk detour, NativeThunk* original)
+std::vector<Param> Params(const UFunction* fn)
 {
-    // UFunction::Func sits a few fields after FunctionFlags (heap pointers and small counts in between): take the first
-    // slot that points into the exe's code in two unrelated native functions.
+    constexpr uint64_t CPF_Parm = 0x80;
+    std::vector<Param> out;
+    for (auto* f = fn ? Read<const uint8_t*>(fn, off::StructChildProps) : nullptr; f; f = Read<const uint8_t*>(f, off::FFieldNext)) {
+        uint64_t flags = Read<uint64_t>(f, off::PropFlags);
+        if (!(flags & CPF_Parm)) continue;
+        Param p;
+        p.name = NameString(f + off::FFieldName);
+        p.offset = Read<int32_t>(f, off::PropOffset);
+        p.size = Read<int32_t>(f, 0x34) * std::max(1, Read<int32_t>(f, 0x30)); // ElementSize * ArrayDim
+        p.flags = flags;
+        p.kind = KindOf(Read<const void*>(f, off::FFieldClass));
+        out.push_back(std::move(p));
+    }
+    return out;
+}
+
+void ForEachProp(const UClass* structOrClass, const std::function<void(const std::string&, const Prop&)>& f)
+{
+    for (const void* s = structOrClass; s; s = SuperOf(s))
+        for (auto* p = Read<const uint8_t*>(s, off::StructChildProps); p; p = Read<const uint8_t*>(p, off::FFieldNext)) {
+            Prop prop;
+            prop.offset = Read<int32_t>(p, off::PropOffset);
+            const void* fieldClass = Read<const void*>(p, off::FFieldClass);
+            prop.kind = KindOf(fieldClass);
+            if (prop.kind == 'b') {
+                prop.offset += Read<uint8_t>(p, off::PropExtra + 1);
+                prop.boolMask = Read<uint8_t>(p, off::PropExtra + 2);
+            } else {
+                prop.inner = Read<const void*>(p, off::PropExtra);
+            }
+            f(NameString(p + off::FFieldName), prop);
+        }
+}
+
+int32_t ParamsSize(const UFunction* fn) { return fn ? Read<int32_t>(fn, off::StructSize) : 0; }
+uint32_t FunctionFlags(const UFunction* fn) { return fn ? Read<uint32_t>(fn, off::FuncFlags) : 0; }
+
+void ProcessEventRaw(UObject* obj, UFunction* fn, void* params)
+{
+    if (obj && fn && g.processEvent) g.processEvent(obj, fn, params);
+}
+
+void WidgetChildren(UObject* w, std::vector<UObject*>& out, int max)
+{
+    if (!IsLive(w)) return;
+    auto readPtr = [](const void* obj, const Prop& p) -> UObject* {
+        UObject* v = nullptr;
+        if (!p || p.kind != 'o' || !SafeRead(static_cast<const uint8_t*>(obj) + p.offset, &v, sizeof(v))) return nullptr;
+        return IsLive(v) ? v : nullptr;
+    };
+    if (UObject* tree = readPtr(w, FindProp(ClassOf(w), "WidgetTree"))) {
+        if (UObject* root = readPtr(tree, FindProp(ClassOf(tree), "RootWidget"))) out.push_back(root);
+        return;
+    }
+    Prop slots = FindProp(ClassOf(w), "Slots");
+    if (!slots || slots.kind != 'a') return;
+    struct {
+        UObject** data;
+        int32_t num, max;
+    } a{};
+    if (!SafeRead(reinterpret_cast<const uint8_t*>(w) + slots.offset, &a, sizeof(a)) || !a.data || a.num <= 0 || a.num > a.max ||
+        a.num > 4096)
+        return;
+    for (int32_t i = 0; i < a.num && int(out.size()) < max; i++) {
+        UObject* slot = nullptr;
+        if (!SafeRead(a.data + i, &slot, sizeof(slot)) || !IsLive(slot)) continue;
+        if (UObject* c = readPtr(slot, FindProp(ClassOf(slot), "Content"))) out.push_back(c);
+    }
+}
+
+int32_t ObjectIndex(const UObject* obj) { return obj ? Read<int32_t>(obj, off::ObjIndex) : -1; }
+
+bool IsLive(const void* obj)
+{
+    if (!obj || reinterpret_cast<uintptr_t>(obj) < 0x10000) return false;
+    int32_t index = -1;
+    if (!SafeRead(static_cast<const uint8_t*>(obj) + off::ObjIndex, &index, sizeof(index))) return false;
+    return ObjectAt(index) == obj;
+}
+
+bool NameIs(const UObject* obj, const char* name)
+{
+    return obj && NameEquals(reinterpret_cast<const uint8_t*>(obj) + off::ObjName, name);
+}
+
+void ForgetClass(const char* name)
+{
+    std::lock_guard lock(g_cacheMutex);
+    g_classes.erase(name);
+    g_classMisses.erase(name);
+}
+
+void FindClasses(const char* const* names, int count, UClass** out)
+{
+    int missing = 0;
+    for (int i = 0; i < count; i++) {
+        std::lock_guard lock(g_cacheMutex);
+        auto it = g_classes.find(names[i]);
+        out[i] = it != g_classes.end() && StillNamed(it->second, names[i]) ? it->second : nullptr;
+        if (it != g_classes.end() && !out[i]) g_classes.erase(it);
+        missing += !out[i];
+    }
+    static UClass* classClass = FindClass("Class");
+    if (!missing || !classClass) return;
+    ForEachObject([&](UObject* o) {
+        for (int i = 0; i < count; i++) {
+            if (out[i] || !NameEquals(reinterpret_cast<uint8_t*>(o) + off::ObjName, names[i])) continue;
+            if (!IsA(o, classClass)) continue; // a class (native or Blueprint), as FindClass checks
+            out[i] = reinterpret_cast<UClass*>(o);
+            std::lock_guard lock(g_cacheMutex);
+            g_classes[names[i]] = out[i];
+        }
+        return true;
+    });
+}
+
+// UFunction::Func sits a few fields after FunctionFlags (heap pointers and small counts in between): take the first
+// slot that points into the exe's code in two unrelated native functions.
+static int FuncOffset()
+{
     static const int funcOffset = [] {
         Range text = Section(".text");
         auto code = [&](const void* f, int o) {
@@ -595,7 +785,24 @@ bool HookNative(UFunction* fn, NativeThunk detour, NativeThunk* original)
             if (code(a, o) && code(b, o)) return o;
         return -1;
     }();
+    return funcOffset;
+}
+
+NativeThunk NativeOf(const UFunction* fn)
+{
+    int off = FuncOffset();
+    void* p = nullptr;
+    return fn && off >= 0 && SafeRead(reinterpret_cast<const uint8_t*>(fn) + off, &p, sizeof(p)) ? reinterpret_cast<NativeThunk>(p) : nullptr;
+}
+
+bool HookNative(UFunction* fn, NativeThunk detour, NativeThunk* original)
+{
+    const int funcOffset = FuncOffset();
     auto* obj = reinterpret_cast<UObject*>(fn);
+    if (fn && !IsLive(fn)) {
+        km::Log("Native hook refused: the function is no longer live");
+        return false;
+    }
     if (!fn || funcOffset < 0) {
         km::Log("Native hook %s: %s", fn ? Name(obj).c_str() : "(function missing)",
                 funcOffset < 0 ? "UFunction::Func not found" : "not found");

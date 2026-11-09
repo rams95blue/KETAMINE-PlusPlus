@@ -43,7 +43,7 @@ static void Main(HMODULE self)
 {
     fs::path dll = ModulePath(self);
     km::g_dir = dll.parent_path().wstring() + L"\\";
-    km::Log("Ketamine Menu v%s", KM_VERSION);
+    km::Log("KETAMINE++ v%s (based on Hellraiser Revival's Ketamine Menu 0.4.14)", KM_VERSION);
     km::Log("Loaded as: %ls", dll.c_str());
 
     fs::path exe = ModulePath(nullptr);

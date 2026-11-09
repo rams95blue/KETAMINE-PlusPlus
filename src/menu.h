@@ -7,6 +7,7 @@ void Init(void* dllModule, const std::string& gameVersion); // settings, hotkeys
 void SetupImGui();          // fonts + theme, right after ImGui::CreateContext()
 void Draw();                // menu (when open) and toasts; between ImGui::NewFrame() and ImGui::Render()
 bool IsOpen();
+void Open(); // any thread: opens the menu (the pause menu's KETAMINE++ button)
 bool WantsFrame();          // open, or toasts still on screen
 bool OnKeyDown(unsigned vk); // window thread; true = key consumed (menu key, hotkeys, key binding)
 void Toast(std::string text); // small notification, top right; any thread

@@ -1,4 +1,19 @@
-Ketamine Menu includes the following third-party software.
+KETAMINE++ is based on Hellraiser Revival's Ketamine Menu by omxga (literalynn)
+(https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu, MIT, see LICENSE;
+https://www.nexusmods.com/clivebarkershellraiserrevival/mods/27)
+and includes the following third-party software and ported mods.
+
+Credits
+  KETAMINE++ ............... rams95 (https://github.com/rams95blue): bundled it all
+                             together, with the added features
+  Ketamine Menu ............ omxga (literalynn)
+  TrueFOV .................. Reynbow
+  ToolInputFix, KeypadInputFix, SpeedUpInteractions, QuickInteract,
+  CutsceneAutoSkip ......... uwumatic101
+  Hellraiser True Minimap .. Thidrec
+  Dear ImGui ............... Omar Cornut
+  MinHook .................. Tsuda Kageyu
+  Inter font ............... Rasmus Andersson
 
 ================================================================================
 Dear ImGui - https://github.com/ocornut/imgui
@@ -205,3 +220,48 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+================================================================================
+TrueFOV by Reynbow (FOV editor: src/fov.cpp, src/scan.cpp) - https://github.com/Reynbow/HellraiserFOV
+  https://www.nexusmods.com/clivebarkershellraiserrevival/mods/12
+================================================================================
+MIT License
+
+Copyright (c) 2026 Reynbow
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+Game fixes (src/fixes.cpp), reimplemented natively from these UE4SS Lua mods for
+Clive Barker's Hellraiser: Revival by uwumatic101 on Nexus Mods. Their pages allow
+use in mod packs, modification and reuse with credit.
+================================================================================
+ToolInputFix - WASD directional input drop fix
+  https://www.nexusmods.com/clivebarkershellraiserrevival/mods/42
+Keypad interaction input quality-of-life (KeypadInputFix)
+  https://www.nexusmods.com/clivebarkershellraiserrevival/mods/43
+SpeedUpInteractions
+  https://www.nexusmods.com/clivebarkershellraiserrevival/mods/44
+QuickInteract
+  https://www.nexusmods.com/clivebarkershellraiserrevival/mods/45
+CutsceneAutoSkip
+  https://www.nexusmods.com/clivebarkershellraiserrevival/mods/46
+
+Minimap (src/minimap.cpp), reimplemented natively from Hellraiser True Minimap v0.12 by Thidrec (UE4SS Lua):
+  https://www.nexusmods.com/clivebarkershellraiserrevival/mods/39

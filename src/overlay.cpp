@@ -192,7 +192,7 @@ void HookExecuteCommandLists(ID3D12Device* device)
         return;
     }
     void* target = (*reinterpret_cast<void***>(tmp))[kExecuteCommandLists];
-    MH_STATUS s = MH_CreateHook(target, &hkExecuteCommandLists, reinterpret_cast<void**>(&oExecuteCommandLists));
+    MH_STATUS s = MH_CreateHook(target, reinterpret_cast<void*>(&hkExecuteCommandLists), reinterpret_cast<void**>(&oExecuteCommandLists));
     if (s == MH_OK) s = MH_EnableHook(target);
     km::Log("DX12: ExecuteCommandLists hook %s", MH_StatusToString(s));
     tmp->Release();
@@ -431,10 +431,12 @@ int CrashFilter(const char* step, EXCEPTION_POINTERS* ep)
 }
 
 // Runs f; an exception turns the overlay off instead of taking the game down (/EHa: locks are released on the way).
+template <class F> KM_NOINLINE void CallOutOfLine(F& f) { f(); }
+
 template <class F> bool Guarded(const char* step, F&& f)
 {
     __try {
-        f();
+        CallOutOfLine(f);
         return true;
     } __except (CrashFilter(step, GetExceptionInformation())) {
         return false;
@@ -446,7 +448,7 @@ void InitImGui(HWND hwnd)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr; // settings live in KetamineMenu.ini
+    io.IniFilename = nullptr; // settings live in KetaminePlusPlus.ini
     io.LogFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; // the game owns the OS cursor: ImGui draws its own
     menu::SetupImGui();
@@ -758,7 +760,7 @@ bool Install()
     WNDCLASSEXW wc{sizeof(wc)};
     wc.lpfnWndProc = DefWindowProcW;
     wc.hInstance = GetModuleHandleW(nullptr);
-    wc.lpszClassName = L"KetamineMenuDummy";
+    wc.lpszClassName = L"KetaminePlusPlusDummy";
     RegisterClassExW(&wc);
     HWND dummy = CreateWindowExW(0, wc.lpszClassName, L"", WS_OVERLAPPEDWINDOW, 0, 0, 64, 64, nullptr, nullptr,
                                  wc.hInstance, nullptr);
@@ -770,8 +772,8 @@ bool Install()
         void** vt = *reinterpret_cast<void***>(sc);
         g_presentTargets[0] = vt[kPresent];
         g_presentTargets[1] = vt[kPresent1];
-        ok = Hook(vt[kPresent], &hkPresent, &oPresent, "Present");
-        Hook(vt[kPresent1], &hkPresent1, &oPresent1, "Present1");
+        ok = Hook(vt[kPresent], reinterpret_cast<void*>(&hkPresent), &oPresent, "Present");
+        Hook(vt[kPresent1], reinterpret_cast<void*>(&hkPresent1), &oPresent1, "Present1");
     } else {
         km::Log("No dummy swapchain could be created, no overlay");
     }

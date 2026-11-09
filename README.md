@@ -1,259 +1,100 @@
 <p align="center">
-  <img src="docs/banner.png" alt="Hellraiser Revival's Ketamine Menu over the game's Lament Configuration" width="100%">
+  <img src="docs/nexus/banner.png" alt="KETAMINE++: a Windows 95 window with the KETAMINE++ title next to a pixel-art monitor icon" width="100%">
+</p>
+
+<h1 align="center">KETAMINE++</h1>
+
+<p align="center">
+  Trainer, FOV editor, minimap, game fixes, jump &amp; bunny hop: <b>one native DLL</b> for Clive Barker's Hellraiser: Revival.<br>
+  No UE4SS, no launcher. Press <b>F1</b> or <b>F8</b>, or pick <b>KETAMINE++</b> in the game's pause menu.
 </p>
 
 <p align="center">
-  <b>English</b> ·
-  <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="README.ja.md">日本語</a> ·
-  <a href="README.ko.md">한국어</a> ·
-  <a href="README.ru.md">Русский</a> ·
-  <a href="README.de.md">Deutsch</a> ·
-  <a href="README.fr.md">Français</a> ·
-  <a href="README.es.md">Español</a> ·
-  <a href="README.pt-BR.md">Português (Brasil)</a>
-</p>
-
-<h1 align="center">Hellraiser Revival's Ketamine Menu</h1>
-
-<p align="center">
-  A clean, in-game trainer for <b>Clive Barker's Hellraiser: Revival</b> (PC).<br>
-  Drop one file in the game folder, press <kbd>Insert</kbd> or <kbd>F8</kbd>, done.
-</p>
-
-<p align="center">
-  <a href="https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/literalynn/Hellraiser-Revivals-Ketamine-Menu?color=AC6EE2&label=download"></a>
-  <a href="https://www.nexusmods.com/clivebarkershellraiserrevival/mods/27"><img alt="Nexus Mods" src="https://img.shields.io/badge/Nexus%20Mods-Ketamine%20Menu-F89FCD"></a>
-  <a href="https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu/actions/workflows/build.yml"><img alt="Build" src="https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu/actions/workflows/build.yml/badge.svg"></a>
-  <img alt="Game version" src="https://img.shields.io/badge/game-1.1.1.227384-F89FCD">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-1B1B23">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-AC6EE2"></a>
-</p>
-
-<p align="center">
-  <a href="#install">Install</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#using-the-menu">Usage</a> ·
-  <a href="#faq--troubleshooting">FAQ</a> ·
-  <a href="#uninstall">Uninstall</a> ·
-  <a href="#build-from-source">Build</a>
+  <a href="https://github.com/rams95blue/KETAMINE-PlusPlus/releases">Download</a> ·
+  <a href="KETAMINE++.md">Changes &amp; technical notes</a> ·
+  <a href="https://github.com/rams95blue/KETAMINE-PlusPlus/issues">Report a bug</a> ·
+  <a href="docs/nexus/description.bbcode">Nexus page (BBCode)</a>
 </p>
 
 ---
 
-> [!TIP]
-> **Back up your saves** before you start: `%LOCALAPPDATA%\Hellraiser\Saved\SaveGames`.
+KETAMINE++ by **[rams95](https://github.com/rams95blue)** bundles a trainer and five community mods into one file,
+rewritten natively (C++, no UE4SS, no Lua), with new features on top:
 
-## Install
+| Built on | By | Links |
+| --- | --- | --- |
+| Hellraiser Revival's Ketamine Menu (the trainer) | omxga | [Nexus](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/27) · [GitHub](https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu) |
+| TrueFOV (FOV editor) | Reynbow | [Nexus](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/12) · [GitHub](https://github.com/Reynbow/HellraiserFOV) |
+| ToolInputFix, KeypadInputFix, SpeedUpInteractions, QuickInteract, CutsceneAutoSkip | uwumatic101 | Nexus [42](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/42) · [43](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/43) · [44](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/44) · [45](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/45) · [46](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/46) |
+| Hellraiser True Minimap | Thidrec | [Nexus](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/39) |
 
-You only need one file, and nothing to install on your PC (no Visual C++ redistributable, no launcher).
-
-1. **Download** the latest `KetamineMenu-vX.Y.Z.zip` from the [Releases page](https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu/releases/latest) and unzip it.
-2. **Open the game folder**: in Steam, right-click *Clive Barker's Hellraiser: Revival* → **Manage** → **Browse local files**.
-   Then open `Hellraiser` → `Binaries` → `Win64` (the folder that contains `Hellraiser-Win64-Shipping.exe`).
-3. **Copy `winmm.dll` into that `Win64` folder.** Optionally copy `KetamineMenu.ini` too (default settings).
-4. **Start the game**, load a save, and press <kbd>Insert</kbd> or <kbd>F8</kbd>.
-
-```
-Clive Barker's Hellraiser - Revival\
-└─ Hellraiser\
-   └─ Binaries\
-      └─ Win64\
-         ├─ Hellraiser-Win64-Shipping.exe
-         ├─ winmm.dll            ← Ketamine Menu
-         └─ KetamineMenu.ini     ← optional, created automatically otherwise
-```
-
-**Vortex:** get it from the [Nexus Mods page](https://www.nexusmods.com/clivebarkershellraiserrevival/mods/27) with *Mod Manager Download*.
-
-**Manual "extract to game folder":** use `KetamineMenu-vX.Y.Z-Nexus.zip` instead. It already contains the
-`Hellraiser\Binaries\Win64\` folders, so Vortex installs it in the right place, or you can extract it straight into the game folder.
-
-**Linux / Steam Deck (Proton):** Proton loads its own `winmm.dll` instead of the menu's. In Steam, right-click the game → **Properties** → **Launch Options** and add `WINEDLLOVERRIDES="winmm=n,b" %command%`. If you use other launch tools too (such as `~/lsfg` or `gamemoderun`), put them before `%command%`, for example `WINEDLLOVERRIDES="winmm=n,b" ~/lsfg %command%`. Don't use Decky Framegen (`~/fgmod/fgmod`) with the menu: it deletes `winmm.dll` at every launch.
-
-> [!TIP]
-> If <kbd>Insert</kbd> / <kbd>F8</kbd> do nothing, open `KetamineMenu.log` next to the DLL: it says exactly what was found and what wasn't.
-> See the [FAQ](#faq--troubleshooting).
+<p align="center">
+  <img src="docs/nexus/card-03-movement.png" width="49%"> <img src="docs/nexus/card-04-fov.png" width="49%">
+  <img src="docs/nexus/card-05-minimap.png" width="49%"> <img src="docs/nexus/card-06-fixes.png" width="49%">
+  <img src="docs/nexus/card-01-player.png" width="49%"> <img src="docs/nexus/card-07-world.png" width="49%">
+  <img src="docs/nexus/card-08-skins.png" width="98%">
+</p>
 
 ## Features
 
-Every option resolves the game's data **by name at runtime**. If a game update removes something, that option is greyed
-out with the reason in a tooltip instead of crashing.
+- **Trainer** (Ketamine Menu): god mode, infinite health and ammo, unbreakable weapons, silent aim, one-hit kill, ESP,
+  items and money, fly / noclip / free camera, teleports, time scale, objectives, a hotkey for every switch.
+- **Genesis Configuration**: shows what your save has; no-cost / no-cooldown powers start off at every load.
+- **Jump and bunny hop**: a jump key (the game has none), auto or manually timed hops with momentum in every direction,
+  air strafing, no speed cap; a speedometer in km/h, mph, hammer units or Unreal units.
+- **Look straight up and down**: lifts the game's 60° / 70° look limit.
+- **FOV editor** (TrueFOV): world, viewmodel and aiming FOV, gameplay only, keeps sprint / ladder FOV effects.
+- **Minimap** (True Minimap): square, circle, octagon or diamond, rotating with you or north-up, framed in your
+  skin's colour, without the original's stutter.
+- **Fixes** (uwumatic101): movement kept after tools, keypad input, sped-up save points / puzzles / pillars / boat,
+  quick interact, cutscene auto-skip; plus hiding the "DROP [Z]" hint when the HUD goes idle.
+- **Simple prompts** (experimental): prompts become plain text, `[F] Barter`, in your colour and size.
+- **Pause menu entry**: a KETAMINE++ item under the game's pause menu.
+- **18 skins + your own**: retro Windows (Win95, Black Hat, Zero Day), terminal (Phosphor, Amber CRT, Root Shell,
+  Mainframe, Netrunner, BSOD) and modern, each with its own font and cursor.
+- 9 languages, UI scale, skip intros, an in-game UI dump for modders.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+The full list, the defaults and the technical notes (performance fixes, the audit of the original fixes) are in
+[KETAMINE++.md](KETAMINE++.md).
 
-**Player**
-- God mode, infinite health
-- Health slider (set any value)
-- No sprint cooldown *(the game has no stamina)*
-- Invisible to enemies
-- One-hit kill, damage multiplier
+## Install
 
-**Combat**
-- Infinite ammo
-- Unbreakable melee weapons
-- Genesis Configuration powers with no Suffering cost
-- No power cooldown, refill Suffering
-- Unlock Telekinesis, Pyrokinesis and Hellchains before the story does
-- Get your weapons back if a scripted part leaves you stuck with only the Genesis Configuration
-- Silent aim: your shots hit the head of the enemy nearest the crosshair, inside an adjustable circle
+1. In Steam: right-click the game → **Manage** → **Browse local files**, then open `Hellraiser\Binaries\Win64`.
+2. Copy `winmm.dll` there (and `KetaminePlusPlus.ini` for the default settings).
+3. Remove what KETAMINE++ replaces: the original Ketamine Menu or TrueFOV `winmm.dll`, and the UE4SS versions of the
+   bundled mods in `ue4ss\Mods`. An existing `KetamineMenu.ini` is copied over on the first start.
+4. Start the game, load a save, press **F1** or **F8**.
 
-**Movement**
-- Fly and noclip, towards where you look, with your usual movement keys or gamepad
-- Free camera (your character stays in place), with an option to pause time
-- Speed and jump height multipliers
-- 3 saved positions + teleport to any level checkpoint
+Linux / Steam Deck (Proton): add `WINEDLLOVERRIDES="winmm=n,b" %command%` to the game's launch options.
 
-</td>
-<td width="50%" valign="top">
+## First steps
 
-**ESP**
-- Enemies: box, health bar, name, distance, skeleton, head marker, chams, snaplines, off-screen arrows
-- World: items on the ground, loot containers, save points
-- Separate range for enemies and objects
+1. **Open** with F1 / F8 (the X closes it), or click **KETAMINE++** in the pause menu.
+2. **Skin**: Settings → Skin. Win95 is the default.
+3. **Jump**: Space jumps but is also the game's Evade: rebind Evade in the game's Controls or pick another jump key.
+4. **Bunny hop**: hold jump (auto hop), or turn auto hop off and press jump as you land. Speedometer in Movement.
+5. **FOV**: 120° / 110° / 90° by default; Page Up / Page Down in game, End toggles.
+6. **Minimap**: off by default; turn it on, and open the TAB map once per level.
+7. **Fixes**: all on except cutscene skip. If one acts odd after a game update, turn it off.
 
-**Inventory**
-- Add or remove money
-- Give any item: ammo, weapons, upgrades, healing, materials (list built from the game itself)
-- Unlock weapon skins & charms
+Back up `%LOCALAPPDATA%\Hellraiser\Saved\SaveGames` before you play, and save before giving key items or completing
+objectives.
 
-**World**
-- Time scale (slow motion / fast forward)
-- Freeze enemies, kill enemies nearby
-- FOV editor (50° to 130°, live), hide HUD
-- Auto lockpick: locks open by themselves
-- Skip the logos and notices at startup (about 30 s saved)
+## Building
 
-**Progress**
-- See active and completed objectives, complete one, change the shop level
+- Windows / MSVC: `cmake -S . -B build -A x64 && cmake --build build --config Release`
+- Linux cross-build (how the releases are built): `./build-mingw.sh` with clang 18, lld, mingw-w64 and the
+  ImGui v1.92.9 / MinHook v1.3.4 sources in `deps/`.
 
-</td>
-</tr>
-</table>
-
-### Screenshots
-
-<table>
-<tr>
-<td><img src="docs/menu-player.png" alt="Player tab"></td>
-<td><img src="docs/menu-combat.png" alt="Combat tab"></td>
-</tr>
-<tr>
-<td><img src="docs/menu-movement.png" alt="Movement tab"></td>
-<td><img src="docs/menu-esp.png" alt="ESP tab"></td>
-</tr>
-<tr>
-<td><img src="docs/menu-world.png" alt="World tab"></td>
-<td><img src="docs/menu-settings.png" alt="Settings tab"></td>
-</tr>
-</table>
-
-## Using the menu
-
-| | |
-|---|---|
-| <kbd>Insert</kbd> / <kbd>F8</kbd> | Open / close the menu (both rebindable in **Settings**). While it is open the mouse controls the menu and the game ignores your input. |
-| Hotkeys | Any switch can get its own key in **Settings → Hotkeys**. Hotkeys work with the menu closed and show a small notification. |
-| Hover | Hover any option to see what it does, or why it is unavailable. |
-| Language | English, 简体中文, 日本語, 한국어, Русский, Deutsch, Français, Español, Português (Brasil): follows your Windows language, change it in **Settings**. |
-| UI scale | Follows your screen resolution; adjust it with the − / + buttons in **Settings**. |
-| Footer | Game version, CPU, GPU, RAM, resolution and FPS at a glance, at the bottom of the menu. |
-| Settings file | Everything is saved to `KetamineMenu.ini` next to the DLL. **Settings → Reset configuration** restores the defaults. |
-
-> [!WARNING]
-> Giving key items or completing objectives can break scripted sequences. **Save your game first.**
-
-## Compatibility
-
-- **Game:** tested with version `1.1.1.227384` (Steam, October 2026 update) and `1.0.1.227219`. Other versions may work:
-  anything that can't be found is greyed out.
-- **Renderer:** DirectX 12 (the default) and DirectX 11.
-- **Other mods:** the menu uses `winmm.dll`, so it doesn't collide with ReShade (`dxgi.dll`) or UE4SS (`dwmapi.dll`).
-- **Frame generation** (DLSS-G, FSR, XeSS FG): supported, but if the menu flickers, turn frame generation off.
-
-## FAQ / Troubleshooting
-
-<details>
-<summary><b>Insert / F8 do nothing</b></summary>
-
-- Check that `winmm.dll` is in `Hellraiser\Binaries\Win64` (next to `Hellraiser-Win64-Shipping.exe`), not in the top game folder.
-- Open `KetamineMenu.log` in the same folder. If it doesn't exist, the DLL wasn't loaded: check the folder again and your antivirus.
-- If you rebound the menu key, the footer of the menu (and `KetamineMenu.ini`, `[Menu] Key=` / `Key2=`) shows the current ones.
-</details>
-
-<details>
-<summary><b>Everything is greyed out</b></summary>
-
-Load a save first: most options need the player to exist. If the header says *Engine not hooked*, the game version changed in a way
-the menu can't handle yet. Please open an issue and attach `KetamineMenu.log`.
-</details>
-
-<details>
-<summary><b>My antivirus flags the DLL</b></summary>
-
-Trainers hook into a game's rendering and memory, which antivirus heuristics dislike. This is a false positive: the source code is
-right here, and every release is built from it by [GitHub Actions](https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu/actions). You can also
-[build it yourself](#build-from-source).
-</details>
-
-<details>
-<summary><b>The game updated and something stopped working</b></summary>
-
-Options that can no longer be found are greyed out with the reason. Open an issue with your `KetamineMenu.log` and the game version
-(`Version.txt` in the game folder).
-</details>
-
-<details>
-<summary><b>How do I report a bug?</b></summary>
-
-[Open an issue](https://github.com/literalynn/Hellraiser-Revivals-Ketamine-Menu/issues) with what you did, what happened, and the `KetamineMenu.log` file
-from your last session (it is overwritten every time the game starts).
-</details>
-
-## Uninstall
-
-Delete `winmm.dll`, `KetamineMenu.ini`, `KetamineMenu.log` (and `KetamineMenu-LICENSE.txt` if you used the Nexus zip) from
-`Hellraiser\Binaries\Win64`. With Vortex, remove the mod, then delete the `.ini` and `.log` it leaves behind. No game file is ever modified.
-
-## Build from source
-
-Requirements: Windows, Visual Studio 2022 or later with the *Desktop development with C++* workload, CMake 3.25+.
-
-```bash
-cmake -S . -B build -A x64
-cmake --build build --config Release
-ctest --test-dir build -C Release
-```
-
-The DLL is `build\Release\winmm.dll`. Dear ImGui and MinHook are downloaded by CMake at pinned versions with checksums.
-Pushing a `v*` tag builds the release zip automatically.
-
-<details>
-<summary><b>How it works</b></summary>
-
-- **Loading:** the game imports `winmm.dll`, so Windows loads ours from the game folder first. Every `winmm` function is forwarded to
-  the real system DLL, then the menu starts on its own thread.
-- **Overlay:** hooks DXGI `Present` (DirectX 11 and 12) with [MinHook](https://github.com/TsudaKageyu/minhook) and draws with
-  [Dear ImGui](https://github.com/ocornut/imgui). Nothing is rendered while the menu is closed (except notifications and the ESP if enabled).
-- **Game access:** reads Unreal Engine 5's own reflection data. Only three engine structures are located by pattern (the object
-  list, the name table and `ProcessEvent`); every class, property and function is then looked up **by name**, so most game
-  updates don't break it. Game functions are called on the game thread through a `ProcessEvent` hook.
-- **Safety:** every feature runs behind a crash guard and degrades to a greyed-out option when something is missing.
-</details>
+The Nexus page images are rendered from `docs/nexus/src` (HTML + Playwright) and in-menu screenshots.
 
 ## Credits
 
-- [Dear ImGui](https://github.com/ocornut/imgui) (MIT) and [MinHook](https://github.com/TsudaKageyu/minhook) (BSD-2-Clause)
-- [Dumper-7](https://github.com/Encryqed/Dumper-7), used to study the game's classes
-- [Inter](https://github.com/rsms/inter) font (SIL Open Font License 1.1); Chinese, Japanese and Korean use the Windows fonts
+- **rams95** ([github.com/rams95blue](https://github.com/rams95blue)): KETAMINE++, bundling it all together with the added features
+- **omxga** (literalynn): Hellraiser Revival's Ketamine Menu (MIT); its README is in [docs/README-KetamineMenu.md](docs/README-KetamineMenu.md)
+- **Reynbow**: TrueFOV · **uwumatic101**: the five fixes · **Thidrec**: True Minimap
+- [Dear ImGui](https://github.com/ocornut/imgui) (MIT), [MinHook](https://github.com/TsudaKageyu/minhook) (BSD-2-Clause),
+  [Inter](https://github.com/rsms/inter) (OFL 1.1); licences in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)
 
-## Disclaimer
-
-Ketamine Menu is a fan-made tool. It is not affiliated with or endorsed by Saber Interactive, Boss Team Games
-or Clive Barker. All trademarks belong to their respective owners. Use it at your own risk.
-
-## License
-
-[MIT](LICENSE)
+KETAMINE++ is a fan-made tool, not affiliated with or endorsed by Saber Interactive, Boss Team Games or Clive Barker.
+Use it at your own risk. Licence: [MIT](LICENSE).
