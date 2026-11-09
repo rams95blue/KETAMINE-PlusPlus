@@ -13,7 +13,7 @@
   <a href="https://github.com/rams95blue/KETAMINE-PlusPlus/releases">Download</a> ·
   <a href="KETAMINE++.md">Changes &amp; technical notes</a> ·
   <a href="https://github.com/rams95blue/KETAMINE-PlusPlus/issues">Report a bug</a> ·
-  <a href="https://www.nexusmods.com/clivebarkershellraiserrevival/mods/47">Nexus page (BBCode)</a>
+  <a href="https://www.nexusmods.com/clivebarkershellraiserrevival/mods/47">Nexus page)</a>
 </p>
 
 ---
